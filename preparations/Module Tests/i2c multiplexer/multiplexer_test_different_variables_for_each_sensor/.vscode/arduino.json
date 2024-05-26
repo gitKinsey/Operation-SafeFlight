@@ -1,0 +1,5 @@
+{
+    "board": "arduino:avr:uno",
+    "port": "COM9",
+    "sketch": "c:\\Users\\Cedi\\OneDrive\\Dokumente\\PlatformIO\\Projects\\240306-170647-uno\\src\\multiplexer_test_different_variables_for_each_sensor.ino"
+}
