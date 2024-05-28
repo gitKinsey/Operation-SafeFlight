@@ -25,8 +25,8 @@
 
 
 // Separate variables for each channel (of the array, for the ppm signals)
-volatile uint16_t channel1;
-volatile uint16_t channel2;
+volatile uint16_t channel1; //unit16_t is an interger that is able to hold 2^16 numbers, so max ig smt with 65k
+volatile uint16_t channel2; //volatile is a variable that can change without action beeing taken aka, not getten activly changed in code (par example: an interput that occurs changes it (which is the case here))
 volatile uint16_t channel3;
 volatile uint16_t channel4;
 volatile uint16_t channel5;
