@@ -61,6 +61,10 @@ void loop() {
   Serial.print(channel8);
   Serial.print(" us\t");
 
+  if (channel1 >= 1600){
+    Serial.println("all avoid mode");
+  }
+
   Serial.println();
   delay(20);  // rn on 20 bc we have a 50Hz "refrech Rate" so aka 50 times per second => 20 milisec per revolution, well maybe needs to be adjusted to 10 or 0 to get every signal 
 }

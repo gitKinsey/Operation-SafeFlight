@@ -2,10 +2,20 @@
 // and copy paste the initialising sequence
 //then in the loop, just switch the channels and you're good to go :)
 //future Cedi, for project connect the multiplexer to sda 4 and scl 5 on the teensy 4.1 (so the analoge pins a4 and a5 )
+
+//IMPORTANT NODES:
+//  - Channel 6 is for changig flight stuff 
+//      - like, it has 3 stages, its the most left hand side switch on the rc sender (its the idle switch)
+//            - so most down stage (pppm = 2000) should be let everything through
+//                - for future cedi, just add a if statement after all the channels get read out, if the condition is fufilled (if stage is middle one or top one) go into another if clause to decide which one it is
+//                  else: just after the if (which contains all the rest of the code, like with reading out the sensors and stuuff) send the ppm signal as is
+//            - middle stage should be a hovermode, so that only the top and bottom sensors get used
+//            - top stage is the all sensor colidions avoidn system 
+//  - connect hc-sro4 to 3.3v 
+
 #include <Arduino.h>
 #include "Adafruit_VL53L0X.h"
 #include <Wire.h>
-#include <NewPing.h> //better Library for reading out hc-sro4 moduels, faster, more reliable 
 
 
 //multiplexer stuff
@@ -63,19 +73,12 @@ Adafruit_VL53L0X lox; //just a name for the VL53lox sensor
 #define ECHO_PIN_BACK_RIGHT 17
 #define MAX_DISTANCE 200 // Maximum distance i wanna ping, maybe needs to get changed 
 
-//giving each Sensor NewPing class, from: https://stackoverflow.com/questions/35186703/arduino-hc-sr04-newping-code-not-working
-NewPing frontLeftSensor(TRIGGER_PIN_FRONT_LEFT, ECHO_PIN_FRONT_LEFT, MAX_DISTANCE);
-NewPing frontRightSensor(TRIGGER_PIN_FRONT_RIGHT, ECHO_PIN_FRONT_RIGHT, MAX_DISTANCE);
-NewPing backLeftSensor(TRIGGER_PIN_BACK_LEFT, ECHO_PIN_BACK_LEFT, MAX_DISTANCE);
-NewPing backRightSensor(TRIGGER_PIN_BACK_RIGHT, ECHO_PIN_BACK_RIGHT, MAX_DISTANCE);
-
-
 //defining all the funcitons
 void readPPM();
 void selectChannel(uint8_t channel);
 void doMeasurementTOF();
 void printArray(float array[], int size);
-void doMeasurementUltrasonic(NewPing &sensor, const char *sensorName);
+void doMeasurementUltrasonic(int triggerPin, int echoPin, const char *sensorName) ;
 
 
 void setup() {
@@ -114,23 +117,23 @@ void setup() {
     Serial.println(". Vl53L0X sensor up and running");
   } 
   Serial.println("All VL53L0X sensors initialized and running...");
+
+  // HC-SR04 pin modes
+    pinMode(TRIGGER_PIN_FRONT_LEFT, OUTPUT);
+    pinMode(ECHO_PIN_FRONT_LEFT, INPUT);
+    pinMode(TRIGGER_PIN_FRONT_RIGHT, OUTPUT);
+    pinMode(ECHO_PIN_FRONT_RIGHT, INPUT);
+    pinMode(TRIGGER_PIN_BACK_LEFT, OUTPUT);
+    pinMode(ECHO_PIN_BACK_LEFT, INPUT);
+    pinMode(TRIGGER_PIN_BACK_RIGHT, OUTPUT);
+    pinMode(ECHO_PIN_BACK_RIGHT, INPUT);
 }
 
 void loop() {
-  //making sure that the data from the ppm input doesn't change during read out (really important)
+    //making sure that the data from the ppm input doesn't change during read out (really important) => everything crucial that shoudnt be disrupted by interupts goes here aka, reading sensor values, performing the calculations, sending the ppm signal out again
   uint16_t channelValues[NUM_CHANNELS];
   noInterrupts(); //makes that the values don't change whilst getting read out => won't change till next cycle of loop()
-  channelValues[0] = channel1;
-  channelValues[1] = channel2;
-  channelValues[2] = channel3;
-  channelValues[3] = channel4;
-  channelValues[4] = channel5;
-  channelValues[5] = channel6;
-  channelValues[6] = channel7;
-  channelValues[7] = channel8;
-  interrupts();
-
-
+  //deactivated the interputs shortly said 
   //reading out all the Tof Sensors
   for(int i = 1; i <=4; i++){
     selectChannel(active_tof);
@@ -140,18 +143,33 @@ void loop() {
   printArray(ReadOutsTof, number_of_tof);
 
 
-
   //readint out all the HC-sro4 sensors
-  doMeasurementUltrasonic(frontLeftSensor, "Front Left");
-  doMeasurementUltrasonic(frontRightSensor, "Front Right");
-  doMeasurementUltrasonic(backLeftSensor, "Back Left");
-  doMeasurementUltrasonic(backRightSensor, "Back Right");
-  delay(1000);
+  doMeasurementUltrasonic(TRIGGER_PIN_FRONT_LEFT, ECHO_PIN_FRONT_LEFT, "Front Left");
+  doMeasurementUltrasonic(TRIGGER_PIN_FRONT_RIGHT, ECHO_PIN_FRONT_RIGHT, "Front Right");
+  doMeasurementUltrasonic(TRIGGER_PIN_BACK_LEFT, ECHO_PIN_BACK_LEFT, "Back Left");
+  doMeasurementUltrasonic(TRIGGER_PIN_BACK_RIGHT, ECHO_PIN_BACK_RIGHT, "Back Right");
+  delay(1000); //no delay here, rn just for debuging purposes 
+
+
+  //for future Cedi: Put all the maths here:
 
 
 
 
-//sending out the ppm signals (last part of code again)
+
+
+  //coping the values of the channels into the array (for sending it out again, is more elegant this way plus abit easier)
+  channelValues[0] = channel1; 
+  channelValues[1] = channel2;
+  channelValues[2] = channel3;
+  channelValues[3] = channel4;
+  channelValues[4] = channel5;
+  channelValues[5] = channel6;
+  channelValues[6] = channel7;
+  channelValues[7] = channel8;
+
+
+  //sending out the ppm signals (last part of code again)
   uint32_t frameStartTime = micros();
   uint32_t lastPulseEndTime = frameStartTime;
   for (uint8_t i = 0; i < NUM_CHANNELS; i++) {
@@ -178,6 +196,12 @@ void loop() {
   digitalWrite(PPM_OUT_PIN, LOW);
   delayMicroseconds(PULSE_LENGTH);
   digitalWrite(PPM_OUT_PIN, HIGH);
+  interrupts(); //activate the interupts again
+  //from here on can go every part of the code that is not crucialy depending on the ppm signal or the sensors themselfs, par example turning on a led or smt 
+
+
+
+
 }
 
 //ppm functions (doesn't need to be called, gets called asoon as an interupt happends)
@@ -257,15 +281,29 @@ void printArray(float array[], int size) { //if needed for debuging, a function 
 
 
 //Hc-sro4 functions
-void doMeasurementUltrasonic(NewPing &sensor, const char *sensorName) {
-  unsigned int distance = sensor.ping_cm();
-  if (distance == 0) {
-    Serial.print(sensorName);
-    Serial.println(": Out of range");
-  } else {
-    Serial.print(sensorName);
-    Serial.print(": ");
-    Serial.print(distance);
-    Serial.println(" cm");
-  }
+void doMeasurementUltrasonic(int triggerPin, int echoPin, const char *sensorName) {
+    // Send a 10 microsecond pulse to trigger pin
+    digitalWrite(triggerPin, LOW);
+    delayMicroseconds(2);
+    digitalWrite(triggerPin, HIGH);
+    delayMicroseconds(10);
+    digitalWrite(triggerPin, LOW);
+
+    // Read the echo pin
+    long duration = pulseIn(echoPin, HIGH);
+
+    // Calculate distance in cm
+    unsigned int distance = duration * 0.034 / 2;
+
+    // Print the result (doesnt quite work)
+    if (distance == 0) {
+        Serial.print(sensorName);
+        Serial.println(": Out of range");
+    } else {
+        Serial.print(sensorName);
+        Serial.print(": ");
+        Serial.print(distance);
+        Serial.println(" cm");
+    }
 }
+
