@@ -148,7 +148,7 @@ void loop() {
   doMeasurementUltrasonic(TRIGGER_PIN_FRONT_RIGHT, ECHO_PIN_FRONT_RIGHT, "Front Right");
   doMeasurementUltrasonic(TRIGGER_PIN_BACK_LEFT, ECHO_PIN_BACK_LEFT, "Back Left");
   doMeasurementUltrasonic(TRIGGER_PIN_BACK_RIGHT, ECHO_PIN_BACK_RIGHT, "Back Right");
-  delay(1000); //no delay here, rn just for debuging purposes 
+  // delay(1000); //no delay here, rn just for debuging purposes 
 
 
   //for future Cedi: Put all the maths here:
@@ -167,7 +167,6 @@ void loop() {
   channelValues[5] = channel6;
   channelValues[6] = channel7;
   channelValues[7] = channel8;
-
 
   //sending out the ppm signals (last part of code again)
   uint32_t frameStartTime = micros();
@@ -196,6 +195,7 @@ void loop() {
   digitalWrite(PPM_OUT_PIN, LOW);
   delayMicroseconds(PULSE_LENGTH);
   digitalWrite(PPM_OUT_PIN, HIGH);
+  
   interrupts(); //activate the interupts again
   //from here on can go every part of the code that is not crucialy depending on the ppm signal or the sensors themselfs, par example turning on a led or smt 
 
