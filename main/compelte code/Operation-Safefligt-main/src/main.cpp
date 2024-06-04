@@ -29,11 +29,11 @@
 #define MULTIPLEXER_ADDRESS 0x70  // I2C address of the multiplexer 
 #define SENSOR_ADDRESS 0x29       // I2C address of the VL53L0X sensor
 
-
-// Define the pin connected to the PPM signal
+//PPM stuff
+// Define the pin connected to the PPM signal (Input pin)
 #define PPM_PIN 2
 // PPM settings (for sending ppm signal again)
-#define PPM_OUT_PIN 9  // Output pin for PPM signal
+#define PPM_OUT_PIN 3  // Output pin for PPM signal
 #define NUM_CHANNELS 8  // Number of PPM channels
 #define PPM_PERIOD 20000  // Total PPM frame length in microseconds
 #define PULSE_LENGTH 300  // Length of sync pulse in microseconds
@@ -49,9 +49,9 @@ volatile uint16_t channel4;
 volatile uint16_t channel5;
 volatile uint16_t channel6;
 volatile uint16_t channel7;
-volatile uint16_t channel8;
+volatile uint16_t channel8; //same as unit16_t just 2^8 this time haha (works also with unit32_t)
 volatile uint8_t currentChannel = 0;
-uint16_t channelValues[NUM_CHANNELS] = {channel1, channel2, channel3, channel4, channel5, channel6, channel7, channel8};
+uint16_t channelValues[NUM_CHANNELS] = {channel1, channel2, channel3, channel4, channel5, channel6, channel7, channel8}; //create a arry that holds unit16_t (bc thats the datatype of the variables) with all the channel values
 
 
 //Tof variables
@@ -76,7 +76,7 @@ Adafruit_VL53L0X lox; //just a name for the VL53lox sensor
 #define ECHO_PIN_FRONT_RIGHT 13
 #define TRIGGER_PIN_BACK_LEFT 14
 #define ECHO_PIN_BACK_LEFT 15
-#define TRIGGER_PIN_BACK_RIGHT 16
+#define TRIGGER_PIN_BACK_RIGHT 16 //maybe this has to be changed, bc in testing it only worked with trig on 9 and echo on 8 (needs further testing), works with those pins just a connection problem with the Breadboard
 #define ECHO_PIN_BACK_RIGHT 17
 #define MAX_DISTANCE 200 // Maximum distance i wanna ping, maybe needs to get changed 
 
@@ -92,7 +92,8 @@ void readPPM();
 void selectChannel(uint8_t channel);
 void doMeasurementTOF();
 void printArray(float array[], int size);
-void doMeasurementUltrasonic(int triggerPin, int echoPin, const char *sensorName) ;
+void doMeasurementUltrasonic(NewPing &sensor, const char *sensorName);
+void sendPPM();
 
 
 void setup() {
@@ -137,7 +138,6 @@ void setup() {
 
 void loop() {
     //making sure that the data from the ppm input doesn't change during read out (really important) => everything crucial that shoudnt be disrupted by interupts goes here aka, reading sensor values, performing the calculations, sending the ppm signal out again
-  uint16_t channelValues[NUM_CHANNELS];
   noInterrupts(); //makes that the values don't change whilst getting read out => won't change till next cycle of loop()
   //deactivated the interputs shortly said 
   //reading out all the Tof Sensors
@@ -175,33 +175,7 @@ void loop() {
   channelValues[7] = channel8;
 
   //sending out the ppm signals (last part of code again)
-  uint32_t frameStartTime = micros();
-  uint32_t lastPulseEndTime = frameStartTime;
-  for (uint8_t i = 0; i < NUM_CHANNELS; i++) {
-    // Calculate the exact time to wait before the next pulse
-    uint32_t pulseStartTime = lastPulseEndTime + (channelValues[i] - PULSE_LENGTH);
-    // Wait for the time to send the next pulse
-    while (micros() < pulseStartTime) {
-    }
-    // Send the channel pulse
-    digitalWrite(PPM_OUT_PIN, LOW);
-    delayMicroseconds(PULSE_LENGTH);
-    digitalWrite(PPM_OUT_PIN, HIGH);
-    // Update the last pulse end time
-    lastPulseEndTime = pulseStartTime + PULSE_LENGTH;
-  }
-  // Calculate remaining time for the sync pulse
-  uint32_t timeSpent = micros() - frameStartTime;
-  uint32_t syncPulseLength = PPM_PERIOD - timeSpent;
-  // Ensure sync pulse length is at least the pulse length
-  if (syncPulseLength > PULSE_LENGTH) {
-    delayMicroseconds(syncPulseLength - PULSE_LENGTH);
-  }
-  // Send the sync pulse
-  digitalWrite(PPM_OUT_PIN, LOW);
-  delayMicroseconds(PULSE_LENGTH);
-  digitalWrite(PPM_OUT_PIN, HIGH);
-  
+  sendPPM();
   interrupts(); //activate the interupts again
   //from here on can go every part of the code that is not crucialy depending on the ppm signal or the sensors themselfs, par example turning on a led or smt 
 
@@ -251,6 +225,36 @@ void readPPM() {
   }
 }
 
+//sending function for PPM signals 
+
+void sendPPM(){
+  uint32_t frameStartTime = micros();
+  uint32_t lastPulseEndTime = frameStartTime;
+  for (uint8_t i = 0; i < NUM_CHANNELS; i++) {
+    // Calculate the exact time to wait before the next pulse
+    uint32_t pulseStartTime = lastPulseEndTime + (channelValues[i] - PULSE_LENGTH);
+    // Wait for the time to send the next pulse
+    while (micros() < pulseStartTime) {
+    }
+    // Send the channel pulse
+    digitalWrite(PPM_OUT_PIN, LOW);
+    delayMicroseconds(PULSE_LENGTH);
+    digitalWrite(PPM_OUT_PIN, HIGH);
+    // Update the last pulse end time
+    lastPulseEndTime = pulseStartTime + PULSE_LENGTH;
+  }
+  // Calculate remaining time for the sync pulse
+  uint32_t timeSpent = micros() - frameStartTime;
+  uint32_t syncPulseLength = PPM_PERIOD - timeSpent;
+  // Ensure sync pulse length is at least the pulse length
+  if (syncPulseLength > PULSE_LENGTH) {
+    delayMicroseconds(syncPulseLength - PULSE_LENGTH);
+  }
+  // Send the sync pulse
+  digitalWrite(PPM_OUT_PIN, LOW);
+  delayMicroseconds(PULSE_LENGTH);
+  digitalWrite(PPM_OUT_PIN, HIGH);
+}
 
 //tof functions
 void selectChannel(uint8_t channel) { // Function to select a channel on the multiplexer
@@ -299,3 +303,29 @@ void doMeasurementUltrasonic(NewPing &sensor, const char *sensorName) {
     Serial.println(" cm");
   }
 }
+
+
+
+
+
+//Licence
+// MIT License
+// Copyright (c) 2024 Cedi
+
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+
+// The above copyright notice and this permission notice shall be included in all
+// copies or substantial portions of the Software.
+
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+// SOFTWARE.
