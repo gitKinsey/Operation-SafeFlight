@@ -1,3 +1,10 @@
+
+//version with newPing (thanks to : mjs513 for adapting the newPing library for the teensy 4.1)
+//link to library: https://github.com/mjs513/NewPing_t4/tree/master
+//needs to be tested first though
+
+
+
 //for more sensors, just switch channels easy, like in the setup, add all the sensor with selectChannel(channel of the sensor)
 // and copy paste the initialising sequence
 //then in the loop, just switch the channels and you're good to go :)
@@ -11,12 +18,12 @@
 //                  else: just after the if (which contains all the rest of the code, like with reading out the sensors and stuuff) send the ppm signal as is
 //            - middle stage should be a hovermode, so that only the top and bottom sensors get used
 //            - top stage is the all sensor colidions avoidn system 
-//  - connect hc-sro4 to 3.3v 
+//  - connect hc-sro4 to 5v BUT INBETWEEN TRIG AND ECHO PUT A 1K OHM RESISTOR !!!!!!!!!!!!
 
 #include <Arduino.h>
 #include "Adafruit_VL53L0X.h"
 #include <Wire.h>
-
+#include <NewPing.h>
 
 //multiplexer stuff
 #define MULTIPLEXER_ADDRESS 0x70  // I2C address of the multiplexer 
@@ -73,6 +80,13 @@ Adafruit_VL53L0X lox; //just a name for the VL53lox sensor
 #define ECHO_PIN_BACK_RIGHT 17
 #define MAX_DISTANCE 200 // Maximum distance i wanna ping, maybe needs to get changed 
 
+//giving each Sensor NewPing class, from: https://stackoverflow.com/questions/35186703/arduino-hc-sr04-newping-code-not-working
+NewPing frontLeftSensor(TRIGGER_PIN_FRONT_LEFT, ECHO_PIN_FRONT_LEFT, MAX_DISTANCE);
+NewPing frontRightSensor(TRIGGER_PIN_FRONT_RIGHT, ECHO_PIN_FRONT_RIGHT, MAX_DISTANCE);
+NewPing backLeftSensor(TRIGGER_PIN_BACK_LEFT, ECHO_PIN_BACK_LEFT, MAX_DISTANCE);
+NewPing backRightSensor(TRIGGER_PIN_BACK_RIGHT, ECHO_PIN_BACK_RIGHT, MAX_DISTANCE);
+
+
 //defining all the funcitons
 void readPPM();
 void selectChannel(uint8_t channel);
@@ -118,15 +132,7 @@ void setup() {
   } 
   Serial.println("All VL53L0X sensors initialized and running...");
 
-  // HC-SR04 pin modes
-    pinMode(TRIGGER_PIN_FRONT_LEFT, OUTPUT);
-    pinMode(ECHO_PIN_FRONT_LEFT, INPUT);
-    pinMode(TRIGGER_PIN_FRONT_RIGHT, OUTPUT);
-    pinMode(ECHO_PIN_FRONT_RIGHT, INPUT);
-    pinMode(TRIGGER_PIN_BACK_LEFT, OUTPUT);
-    pinMode(ECHO_PIN_BACK_LEFT, INPUT);
-    pinMode(TRIGGER_PIN_BACK_RIGHT, OUTPUT);
-    pinMode(ECHO_PIN_BACK_RIGHT, INPUT);
+
 }
 
 void loop() {
@@ -143,11 +149,11 @@ void loop() {
   printArray(ReadOutsTof, number_of_tof);
 
 
-  //readint out all the HC-sro4 sensors
-  doMeasurementUltrasonic(TRIGGER_PIN_FRONT_LEFT, ECHO_PIN_FRONT_LEFT, "Front Left");
-  doMeasurementUltrasonic(TRIGGER_PIN_FRONT_RIGHT, ECHO_PIN_FRONT_RIGHT, "Front Right");
-  doMeasurementUltrasonic(TRIGGER_PIN_BACK_LEFT, ECHO_PIN_BACK_LEFT, "Back Left");
-  doMeasurementUltrasonic(TRIGGER_PIN_BACK_RIGHT, ECHO_PIN_BACK_RIGHT, "Back Right");
+  //read out all the HC-sro4 sensors
+  doMeasurementUltrasonic(frontLeftSensor, "Front Left");
+  doMeasurementUltrasonic(frontRightSensor, "Front Right");
+  doMeasurementUltrasonic(backLeftSensor, "Back Left");
+  doMeasurementUltrasonic(backRightSensor, "Back Right");
   // delay(1000); //no delay here, rn just for debuging purposes 
 
 
@@ -281,29 +287,15 @@ void printArray(float array[], int size) { //if needed for debuging, a function 
 
 
 //Hc-sro4 functions
-void doMeasurementUltrasonic(int triggerPin, int echoPin, const char *sensorName) {
-    // Send a 10 microsecond pulse to trigger pin
-    digitalWrite(triggerPin, LOW);
-    delayMicroseconds(2);
-    digitalWrite(triggerPin, HIGH);
-    delayMicroseconds(10);
-    digitalWrite(triggerPin, LOW);
-
-    // Read the echo pin
-    long duration = pulseIn(echoPin, HIGH);
-
-    // Calculate distance in cm
-    unsigned int distance = duration * 0.034 / 2;
-
-    // Print the result (doesnt quite work)
-    if (distance == 0) {
-        Serial.print(sensorName);
-        Serial.println(": Out of range");
-    } else {
-        Serial.print(sensorName);
-        Serial.print(": ");
-        Serial.print(distance);
-        Serial.println(" cm");
-    }
+void doMeasurementUltrasonic(NewPing &sensor, const char *sensorName) {
+  unsigned int distance = sensor.ping_cm();
+  if (distance == 0) {
+    Serial.print(sensorName);
+    Serial.println(": Out of range");
+  } else {
+    Serial.print(sensorName);
+    Serial.print(": ");
+    Serial.print(distance);
+    Serial.println(" cm");
+  }
 }
-
