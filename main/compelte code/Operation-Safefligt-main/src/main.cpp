@@ -1,7 +1,29 @@
+//Licence
+// MIT License
+// Copyright (c) 2024 Cedi
+
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+
+// The above copyright notice and this permission notice shall be included in all
+// copies or substantial portions of the Software.
+
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+// SOFTWARE.
+
 
 //version with newPing (thanks to : mjs513 for adapting the newPing library for the teensy 4.1)
 //link to library: https://github.com/mjs513/NewPing_t4/tree/master
-//needs to be tested first though
+//needs to be tested first though, should be working tested in a seperate file with 4 sensors 
 
 
 
@@ -23,7 +45,8 @@
 #include <Arduino.h>
 #include "Adafruit_VL53L0X.h"
 #include <Wire.h>
-#include <NewPing.h>
+#include <NewPing.h> 
+#include <math.h> 
 
 //multiplexer stuff
 #define MULTIPLEXER_ADDRESS 0x70  // I2C address of the multiplexer 
@@ -106,7 +129,7 @@ void setup() {
   pinMode(PPM_OUT_PIN, OUTPUT);
   digitalWrite(PPM_OUT_PIN, HIGH);
 
-
+  
   //tof setup
   // Initialize Wire (connection between microcontroller and i2c multiplexer), first sda than scl (doesn't work on teensy, need to plug it into a4 and a5 on teensy)
   Wire.begin(); //start the i2c connection between the microcontroller and the multiplexer 
@@ -256,7 +279,7 @@ void sendPPM(){
   digitalWrite(PPM_OUT_PIN, HIGH);
 }
 
-//tof functions
+//multiplexer 
 void selectChannel(uint8_t channel) { // Function to select a channel on the multiplexer
   Wire.beginTransmission(MULTIPLEXER_ADDRESS);
   Wire.write(1 << channel);
@@ -264,6 +287,7 @@ void selectChannel(uint8_t channel) { // Function to select a channel on the mul
   Wire.endTransmission();
 }
 
+//tof stuff
 void doMeasurementTOF(){ //Function to measure the distance with Tof
   VL53L0X_RangingMeasurementData_t measure;
   
@@ -279,6 +303,7 @@ void doMeasurementTOF(){ //Function to measure the distance with Tof
   // delay(20); //idk how much probs i can just leave that one out ig
 }
 
+//print the tof sensor values 
 void printArray(float array[], int size) { //if needed for debuging, a function to print out the array
     Serial.println("Array contents:");
     for (int i = 0; i < size; i++) {
@@ -308,24 +333,4 @@ void doMeasurementUltrasonic(NewPing &sensor, const char *sensorName) {
 
 
 
-//Licence
-// MIT License
-// Copyright (c) 2024 Cedi
 
-// Permission is hereby granted, free of charge, to any person obtaining a copy
-// of this software and associated documentation files (the "Software"), to deal
-// in the Software without restriction, including without limitation the rights
-// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-// copies of the Software, and to permit persons to whom the Software is
-// furnished to do so, subject to the following conditions:
-
-// The above copyright notice and this permission notice shall be included in all
-// copies or substantial portions of the Software.
-
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-// SOFTWARE.
