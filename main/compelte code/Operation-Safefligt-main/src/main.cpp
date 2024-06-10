@@ -48,9 +48,11 @@
 #include <NewPing.h> 
 #include <math.h> 
 
+
 //multiplexer stuff
 #define MULTIPLEXER_ADDRESS 0x70  // I2C address of the multiplexer 
 #define SENSOR_ADDRESS 0x29       // I2C address of the VL53L0X sensor
+
 
 //PPM stuff
 // Define the pin connected to the PPM signal (Input pin)
@@ -62,7 +64,6 @@
 #define PULSE_LENGTH 300  // Length of sync pulse in microseconds
 #define MIN_CHANNEL_PULSE 1000  // Minimum channel pulse length in microseconds
 #define MAX_CHANNEL_PULSE 2000  // Maximum channel pulse length in microseconds
-
 
 // Separate variables for each channel (of the array, for the ppm signals)
 volatile uint16_t channel1; //unit16_t is an interger that is able to hold 2^16 numbers, so max ig smt with 65k
@@ -110,6 +111,7 @@ NewPing backLeftSensor(TRIGGER_PIN_BACK_LEFT, ECHO_PIN_BACK_LEFT, MAX_DISTANCE);
 NewPing backRightSensor(TRIGGER_PIN_BACK_RIGHT, ECHO_PIN_BACK_RIGHT, MAX_DISTANCE);
 
 
+
 //defining all the funcitons
 void readPPM();
 void selectChannel(uint8_t channel);
@@ -117,45 +119,20 @@ void doMeasurementTOF();
 void printArray(float array[], int size);
 void doMeasurementUltrasonic(NewPing &sensor, const char *sensorName);
 void sendPPM();
+void ppmSetup();
+void tofSetup();
 
 
 void setup() {
   Serial.begin(9600);  // Start serial communication for debugging
   Serial.println("Start of program");
-
-  //ppm setup
-  pinMode(PPM_PIN, INPUT);
-  attachInterrupt(digitalPinToInterrupt(PPM_PIN), readPPM, FALLING);  // Set up an interrupt on the falling edge
-  pinMode(PPM_OUT_PIN, OUTPUT);
-  digitalWrite(PPM_OUT_PIN, HIGH);
-
   
-  //tof setup
-  // Initialize Wire (connection between microcontroller and i2c multiplexer), first sda than scl (doesn't work on teensy, need to plug it into a4 and a5 on teensy)
-  Wire.begin(); //start the i2c connection between the microcontroller and the multiplexer 
-  // Test if the multiplexer is recognized
-  Wire.beginTransmission(MULTIPLEXER_ADDRESS);
-  if (Wire.endTransmission() == 0) {
-    Serial.println("Multiplexer detected.");
-  } else {
-    Serial.println("Multiplexer not detected. Check connections and address.");
-    while (1);  // Stop further execution if multiplexer is not detected
-  }
-  //if not working just delete the for loop :), nevermind works (or should be working when last tested on esp32 (need to be tested on teensy 4.1), works aswell)
-  for(current_tof_sensor = 1; current_tof_sensor <= number_of_tof; current_tof_sensor++) { // for loop for checking every connected sensor 
-  //(just checks for the number of sensor enterd above)
-    selectChannel(current_channel_for_initial);
-    if(!lox.begin(SENSOR_ADDRESS)){
-        Serial.print("Failed to boot VL53L0X sensor ");
-        Serial.println(current_tof_sensor);
-        while(1);
-    }
-    current_channel_for_initial++;
-    Serial.print(current_tof_sensor);
-    Serial.println(". Vl53L0X sensor up and running");
-  } 
-  Serial.println("All VL53L0X sensors initialized and running...");
+  //setting up all the neccesarry parts of the code:
+  //ppm Input setup
+  ppmSetup();
 
+  //tof Sensor initialization
+  tofSetup();
 
 }
 
@@ -249,7 +226,6 @@ void readPPM() {
 }
 
 //sending function for PPM signals 
-
 void sendPPM(){
   uint32_t frameStartTime = micros();
   uint32_t lastPulseEndTime = frameStartTime;
@@ -279,6 +255,7 @@ void sendPPM(){
   digitalWrite(PPM_OUT_PIN, HIGH);
 }
 
+
 //multiplexer 
 void selectChannel(uint8_t channel) { // Function to select a channel on the multiplexer
   Wire.beginTransmission(MULTIPLEXER_ADDRESS);
@@ -286,6 +263,7 @@ void selectChannel(uint8_t channel) { // Function to select a channel on the mul
   active_tof = channel;
   Wire.endTransmission();
 }
+
 
 //tof stuff
 void doMeasurementTOF(){ //Function to measure the distance with Tof
@@ -330,7 +308,41 @@ void doMeasurementUltrasonic(NewPing &sensor, const char *sensorName) {
 }
 
 
+//Setup functions:
+//setup for the ppm Input:
+void ppmSetup(){
+  //ppm setup
+  pinMode(PPM_PIN, INPUT);
+  attachInterrupt(digitalPinToInterrupt(PPM_PIN), readPPM, FALLING);  // Set up an interrupt on the falling edge
+  pinMode(PPM_OUT_PIN, OUTPUT);
+  digitalWrite(PPM_OUT_PIN, HIGH);
+}
 
-
-
-
+//setup for the VL53lox Sensors (aka Tof):
+void tofSetup(){
+  //tof setup
+  // Initialize Wire (connection between microcontroller and i2c multiplexer), first sda than scl (doesn't work on teensy, need to plug it into a4 and a5 on teensy)
+  Wire.begin(); //start the i2c connection between the microcontroller and the multiplexer 
+  // Test if the multiplexer is recognized
+  Wire.beginTransmission(MULTIPLEXER_ADDRESS);
+  if (Wire.endTransmission() == 0) {
+    Serial.println("Multiplexer detected.");
+  } else {
+    Serial.println("Multiplexer not detected. Check connections and address.");
+    while (1);  // Stop further execution if multiplexer is not detected
+  }
+  //if not working just delete the for loop :), nevermind works (or should be working when last tested on esp32 (need to be tested on teensy 4.1), works aswell)
+  for(current_tof_sensor = 1; current_tof_sensor <= number_of_tof; current_tof_sensor++) { // for loop for checking every connected sensor 
+  //(just checks for the number of sensor enterd above)
+    selectChannel(current_channel_for_initial);
+    if(!lox.begin(SENSOR_ADDRESS)){
+        Serial.print("Failed to boot VL53L0X sensor ");
+        Serial.println(current_tof_sensor);
+        while(1);
+    }
+    current_channel_for_initial++;
+    Serial.print(current_tof_sensor);
+    Serial.println(". Vl53L0X sensor up and running");
+  } 
+  Serial.println("All VL53L0X sensors initialized and running...");
+}
