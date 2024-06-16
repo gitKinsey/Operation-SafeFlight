@@ -20,13 +20,6 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-
-//version with newPing (thanks to : mjs513 for adapting the newPing library for the teensy 4.1)
-//link to library: https://github.com/mjs513/NewPing_t4/tree/master
-//needs to be tested first though, should be working tested in a seperate file with 4 sensors 
-
-
-
 //for more sensors, just switch channels easy, like in the setup, add all the sensor with selectChannel(channel of the sensor)
 // and copy paste the initialising sequence
 //then in the loop, just switch the channels and you're good to go :)
@@ -40,13 +33,26 @@
 //                  else: just after the if (which contains all the rest of the code, like with reading out the sensors and stuuff) send the ppm signal as is
 //            - middle stage should be a hovermode, so that only the top and bottom sensors get used
 //            - top stage is the all sensor colidions avoidn system 
-//  - connect hc-sro4 to 5v BUT INBETWEEN TRIG AND ECHO PUT A 1K OHM RESISTOR !!!!!!!!!!!!
+//  - to add delays into the code, you have to use:     rtos::ThisThread::sleep_for(10); (and change the value in the for() to what ever miliseconds you want)
+
+
 
 #include <Arduino.h>
+#include <Ultrasonic.h> //on the nano rp2040 newPing once again doesn't work so i'm switching to Ultrasonic.h library, which is a general library that works with all mircocontrollers
+#include <rtos.h>
+#include <mbed.h>
 #include "Adafruit_VL53L0X.h"
-#include <Wire.h>
-#include <NewPing.h> 
 #include <math.h> 
+#include <Wire.h>
+#include <Arduino_LSM6DS3.h> //library to read out the onboard accelerometer and gyroscope of the arduino nano rp2040: https://docs.arduino.cc/tutorials/nano-rp2040-connect/rp2040-imu-basics/ 
+
+
+//Setting up the multi-thread part of the code, for that each core gets asign a thread, which runs infinitely, the thread gets a task, which is a function that gets executed, and well thread defintion happens here
+rtos::Thread PPMSignalProcessingThread;
+rtos::Thread SensorReadingThread;
+//which thread does what:
+// PPM Signal Processing Thread: This thread is responsible for reading the PPM signals from the receiver, processing them, and sending them out again after any necessary manipulation based on sensor readings.
+// Sensor Measurement Thread: This thread continuously reads the sensor values from both the ultrasonic sensors and the TOF sensors, and updates the respective arrays containing the sensor readings.
 
 
 //multiplexer stuff
@@ -94,96 +100,86 @@ Adafruit_VL53L0X lox; //just a name for the VL53lox sensor
 
 
 //hc-sro4 Setup stuff
-#define TRIGGER_PIN_FRONT_LEFT 10
-#define ECHO_PIN_FRONT_LEFT 11
-#define TRIGGER_PIN_FRONT_RIGHT 12
-#define ECHO_PIN_FRONT_RIGHT 13
-#define TRIGGER_PIN_BACK_LEFT 14
-#define ECHO_PIN_BACK_LEFT 15
-#define TRIGGER_PIN_BACK_RIGHT 16 //maybe this has to be changed, bc in testing it only worked with trig on 9 and echo on 8 (needs further testing), works with those pins just a connection problem with the Breadboard
-#define ECHO_PIN_BACK_RIGHT 17
-#define MAX_DISTANCE 200 // Maximum distance i wanna ping, maybe needs to get changed 
+#define TRIGGER_PIN_FRONT_LEFT 2
+#define ECHO_PIN_FRONT_LEFT 3
+#define TRIGGER_PIN_FRONT_RIGHT 4
+#define ECHO_PIN_FRONT_RIGHT 5
+#define TRIGGER_PIN_BACK_LEFT 6
+#define ECHO_PIN_BACK_LEFT 7
+#define TRIGGER_PIN_BACK_RIGHT 8 //maybe this has to be changed, bc in testing it only worked with trig on 9 and echo on 8 (needs further testing), works with those pins just a connection problem with the Breadboard
+#define ECHO_PIN_BACK_RIGHT 9
 
-//giving each Sensor NewPing class, from: https://stackoverflow.com/questions/35186703/arduino-hc-sr04-newping-code-not-working
-NewPing frontLeftSensor(TRIGGER_PIN_FRONT_LEFT, ECHO_PIN_FRONT_LEFT, MAX_DISTANCE);
-NewPing frontRightSensor(TRIGGER_PIN_FRONT_RIGHT, ECHO_PIN_FRONT_RIGHT, MAX_DISTANCE);
-NewPing backLeftSensor(TRIGGER_PIN_BACK_LEFT, ECHO_PIN_BACK_LEFT, MAX_DISTANCE);
-NewPing backRightSensor(TRIGGER_PIN_BACK_RIGHT, ECHO_PIN_BACK_RIGHT, MAX_DISTANCE);
+//values for the ultrasonic sensors:
+float UltrasonicFrontLeft = 0;
+float UltrasonicFrontRight = 0;
+float UltrasonicBackLeft = 0;
+float UltrasonicBackRight = 0;
+float ReadOutsUltrasonic[4] = {UltrasonicFrontLeft, UltrasonicFrontRight, UltrasonicBackLeft, UltrasonicBackRight}; // Store all the ultrasonic readouts
 
+// Define pins for the ultrasonic sensors starting from digital pin 2
+Ultrasonic ultrasonic1(TRIGGER_PIN_FRONT_LEFT, ECHO_PIN_FRONT_LEFT);  // Sensor 1 (front left)
+Ultrasonic ultrasonic2(TRIGGER_PIN_FRONT_RIGHT, ECHO_PIN_FRONT_RIGHT);  // Sensor 2 (front right)
+Ultrasonic ultrasonic3(TRIGGER_PIN_BACK_LEFT, ECHO_PIN_BACK_LEFT);  // Sensor 3 (back left)
+Ultrasonic ultrasonic4(TRIGGER_PIN_BACK_RIGHT, ECHO_PIN_BACK_RIGHT);  // Sensor 4 (back right)>
 
+//set up of the accelerometer and gyroscope: (onboard on the rp2040 microcontroller)
+float Ax, Ay, Az; //float values fo the different accelerometer values for x, y and z axis
+float Gx, Gy, Gz; //float values fo the different gyroscope values for x, y and z axis
 
-//defining all the funcitons
+// put function declarations here:
+void doMeasurementUltrasonic(Ultrasonic &sensor, float &sensorValue, const char *sensorName, float *readingsArray);
 void readPPM();
 void selectChannel(uint8_t channel);
 void doMeasurementTOF();
 void printArray(float array[], int size);
-void doMeasurementUltrasonic(NewPing &sensor, const char *sensorName);
 void sendPPM();
 void ppmSetup();
 void tofSetup();
+void initializeIMU(); //the accelerometer and the gyroscope on the rp2040 microcontroller
+void readGyroscope();
+void readAccelerometer();
+
+
+//core setup functions:
+void ppmSignalProcessing(); //on core 0
+void sensorMeasurement(); //on core 1
 
 
 void setup() {
-  Serial.begin(9600);  // Start serial communication for debugging
-  Serial.println("Start of program");
-  
-  //setting up all the neccesarry parts of the code:
-  //ppm Input setup
-  ppmSetup();
+  // put your setup code here, to run once:
+  // Initialize serial communication 
+  Serial.begin(9600);
 
-  //tof Sensor initialization
-  tofSetup();
+  //Start the threads on each core (functions are called in setup)
+  PPMSignalProcessingThread.start(ppmSignalProcessing);
+  SensorReadingThread.start(sensorMeasurement);
+
+  //ppm setup
+  ppmSetup();
 
 }
 
 void loop() {
-    //making sure that the data from the ppm input doesn't change during read out (really important) => everything crucial that shoudnt be disrupted by interupts goes here aka, reading sensor values, performing the calculations, sending the ppm signal out again
-  noInterrupts(); //makes that the values don't change whilst getting read out => won't change till next cycle of loop()
-  //deactivated the interputs shortly said 
-  //reading out all the Tof Sensors
-  for(int i = 1; i <=4; i++){
-    selectChannel(active_tof);
-    doMeasurementTOF();
-    ReadOutsTof[active_tof] = MeasurementTof;
-  }
-  printArray(ReadOutsTof, number_of_tof);
+  // put your main code here, to run repeatedly:
 
-
-  //read out all the HC-sro4 sensors
-  doMeasurementUltrasonic(frontLeftSensor, "Front Left");
-  doMeasurementUltrasonic(frontRightSensor, "Front Right");
-  doMeasurementUltrasonic(backLeftSensor, "Back Left");
-  doMeasurementUltrasonic(backRightSensor, "Back Right");
-  // delay(1000); //no delay here, rn just for debuging purposes 
-
-
-  //for future Cedi: Put all the maths here:
-
-
-
-
-
-
-  //coping the values of the channels into the array (for sending it out again, is more elegant this way plus abit easier)
-  channelValues[0] = channel1; 
-  channelValues[1] = channel2;
-  channelValues[2] = channel3;
-  channelValues[3] = channel4;
-  channelValues[4] = channel5;
-  channelValues[5] = channel6;
-  channelValues[6] = channel7;
-  channelValues[7] = channel8;
-
-  //sending out the ppm signals (last part of code again)
-  sendPPM();
-  interrupts(); //activate the interupts again
-  //from here on can go every part of the code that is not crucialy depending on the ppm signal or the sensors themselfs, par example turning on a led or smt 
-
-
-
+  // The main loop is empty because threads are running independently
+  // The main loop is empty because threads are running independently
+  // The main loop is empty because threads are running independently
+  // The main loop is empty because threads are running independently
+  // The main loop is empty because threads are running independently
+  // The main loop is empty because threads are running independently
+  // The main loop is empty because threads are running independently
+  // The main loop is empty because threads are running independently
+  // The main loop is empty because threads are running independently
+  // The main loop is empty because threads are running independently
+  // The main loop is empty because threads are running independently   
+  // The main loop is empty because threads are running independently
+  // The main loop is empty because threads are running independently
+  // The main loop is empty because threads are running independently
 
 }
 
+// put function definitions here:
 //ppm functions (doesn't need to be called, gets called asoon as an interupt happends)
 void readPPM() { 
   static uint32_t lastTime = 0;
@@ -255,10 +251,8 @@ void sendPPM(){
   digitalWrite(PPM_OUT_PIN, HIGH);
 }
 
-
 //multiplexer 
 void selectChannel(uint8_t channel) { // Function to select a channel on the multiplexer
-  Wire.begin();
   Wire.beginTransmission(MULTIPLEXER_ADDRESS);
   Wire.write(1 << channel);
   active_tof = channel;
@@ -294,9 +288,11 @@ void printArray(float array[], int size) { //if needed for debuging, a function 
 }
 
 
-//Hc-sro4 functions
-void doMeasurementUltrasonic(NewPing &sensor, const char *sensorName) {
-  unsigned int distance = sensor.ping_cm();
+
+//HC-SR04 functions:
+//doing the measurement for the ultrasonic sensors:
+void doMeasurementUltrasonic(Ultrasonic &sensor, float &sensorValue, const char *sensorName, float *readingsArray) {
+  unsigned int distance = sensor.read();
   if (distance == 0) {
     Serial.print(sensorName);
     Serial.println(": Out of range");
@@ -306,8 +302,47 @@ void doMeasurementUltrasonic(NewPing &sensor, const char *sensorName) {
     Serial.print(distance);
     Serial.println(" cm");
   }
+   sensorValue = distance;
+  if (strcmp(sensorName, "UltrasonicFrontLeft") == 0) {
+    readingsArray[0] = sensorValue;
+  } else if (strcmp(sensorName, "UltrasonicFrontRight") == 0) {
+    readingsArray[1] = sensorValue;
+  } else if (strcmp(sensorName, "UltrasonicBackLeft") == 0) {
+    readingsArray[2] = sensorValue;
+  } else if (strcmp(sensorName, "UltrasonicBackRight") == 0) {
+    readingsArray[3] = sensorValue;
+  }
 }
 
+//IMU functions:
+
+void readAccelerometer() {
+  if (IMU.accelerationAvailable()) {
+    IMU.readAcceleration(Ax, Ay, Az);
+
+    Serial.println("Accelerometer data: ");
+    Serial.print(Ax);
+    Serial.print('\t');
+    Serial.print(Ay);
+    Serial.print('\t');
+    Serial.println(Az);
+    Serial.println();
+  }
+}
+
+void readGyroscope() {
+ if (IMU.gyroscopeAvailable()) {
+    IMU.readGyroscope(Gx, Gy, Gz);
+    
+    Serial.println("Gyroscope data: ");
+    Serial.print(Gx);
+    Serial.print('\t');
+    Serial.print(Gy);
+    Serial.print('\t');
+    Serial.println(Gz);
+    Serial.println();
+  }
+}
 
 //Setup functions:
 //setup for the ppm Input:
@@ -346,4 +381,76 @@ void tofSetup(){
     Serial.println(". Vl53L0X sensor up and running");
   } 
   Serial.println("All VL53L0X sensors initialized and running...");
+}
+
+void initializeIMU() {
+    if (!IMU.begin()) {
+    Serial.println("Failed to initialize IMU!");
+    while (1);
+  }
+
+  Serial.print("Accelerometer sample rate = ");
+  Serial.print(IMU.accelerationSampleRate());
+  Serial.println("Hz");
+  Serial.println();
+
+  Serial.print("Gyroscope sample rate = ");  
+  Serial.print(IMU.gyroscopeSampleRate());
+  Serial.println("Hz");
+  Serial.println();
+}
+
+//Setting up the fuctions for the threads: on each core sepertly:
+
+void ppmSignalProcessing(){ //set up for core 0
+  while (true) //is while true bc its like the mainloop for that core, so it has to run forever
+  {
+    //making sure that the data from the ppm input doesn't change during read out (really important) => everything crucial that shoudnt be disrupted by interupts goes here aka, reading sensor values, performing the calculations, sending the ppm signal out again
+  noInterrupts(); //makes that the values don't change whilst getting read out => won't change till next cycle of loop()
+  //deactivated the interputs shortly said 
+
+
+  //for future Cedi: Put all the maths here:
+
+
+
+  //coping the values of the channels into the array (for sending it out again, is more elegant this way plus abit easier)
+  channelValues[0] = channel1; 
+  channelValues[1] = channel2;
+  channelValues[2] = channel3;
+  channelValues[3] = channel4;
+  channelValues[4] = channel5;
+  channelValues[5] = channel6;
+  channelValues[6] = channel7;
+  channelValues[7] = channel8;
+
+  //sending out the ppm signals (last part of code again)
+  sendPPM();
+  
+  interrupts(); //activate the interupts again
+
+  }
+  
+
+} 
+
+void sensorMeasurement() { //on core 1
+    //tof setup
+    tofSetup();
+
+    while (true) //is while true bc its like the mainloop for that core, so it has to run forever
+    {
+        //read out all the tof sensors
+        for(int i = 1; i <= 4; i++){
+            selectChannel(active_tof);
+            doMeasurementTOF();
+            ReadOutsTof[active_tof] = MeasurementTof;
+        }
+
+        //read out all the ultrasonic sensors
+        doMeasurementUltrasonic(ultrasonic1, UltrasonicFrontLeft, "UltrasonicFrontLeft", ReadOutsUltrasonic);
+        doMeasurementUltrasonic(ultrasonic2, UltrasonicFrontRight, "UltrasonicFrontRight", ReadOutsUltrasonic);
+        doMeasurementUltrasonic(ultrasonic3, UltrasonicBackLeft, "UltrasonicBackLeft", ReadOutsUltrasonic);
+        doMeasurementUltrasonic(ultrasonic4, UltrasonicBackRight, "UltrasonicBackRight", ReadOutsUltrasonic);
+    }
 }
