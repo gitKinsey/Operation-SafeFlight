@@ -58,12 +58,13 @@
 // Define the pin connected to the PPM signal (Input pin)
 #define PPM_PIN 2
 // PPM settings (for sending ppm signal again)
-#define PPM_OUT_PIN 3  // Output pin for PPM signal
+#define PPM_PIN_OUT 6 // Output pin for PPM signal
 #define NUM_CHANNELS 8  // Number of PPM channels
-#define PPM_PERIOD 20000  // Total PPM frame length in microseconds
-#define PULSE_LENGTH 300  // Length of sync pulse in microseconds
-#define MIN_CHANNEL_PULSE 1000  // Minimum channel pulse length in microseconds
-#define MAX_CHANNEL_PULSE 2000  // Maximum channel pulse length in microseconds
+#define TOTAL_PULSES (NUM_CHANNELS + 1)
+#define FRAME_DURATION 20000 // Total PPM frame length in microseconds
+#define MIN_PULSE_WIDTH 1000  // Minimum channel pulse length in microseconds
+#define MAX_PULSE_WIDTH 2000// Maximum channel pulse length in microseconds
+uint32_t frameStartTime;
 
 // Separate variables for each channel (of the array, for the ppm signals)
 volatile uint16_t channel1; //unit16_t is an interger that is able to hold 2^16 numbers, so max ig smt with 65k
@@ -75,7 +76,7 @@ volatile uint16_t channel6;
 volatile uint16_t channel7;
 volatile uint16_t channel8; //same as unit16_t just 2^8 this time haha (works also with unit32_t)
 volatile uint8_t currentChannel = 0;
-uint16_t channelValues[NUM_CHANNELS] = {channel1, channel2, channel3, channel4, channel5, channel6, channel7, channel8}; //create a arry that holds unit16_t (bc thats the datatype of the variables) with all the channel values
+uint16_t pulseWidths[NUM_CHANNELS];
 
 
 //Tof variables
@@ -140,6 +141,17 @@ void loop() {
     //making sure that the data from the ppm input doesn't change during read out (really important) => everything crucial that shoudnt be disrupted by interupts goes here aka, reading sensor values, performing the calculations, sending the ppm signal out again
   noInterrupts(); //makes that the values don't change whilst getting read out => won't change till next cycle of loop()
   //deactivated the interputs shortly said 
+
+  //coping the values of the channels into the array (for sending it out again, is more elegant this way plus abit easier)
+  pulseWidths[0] = channel1;
+  pulseWidths[1] = channel2;
+  pulseWidths[2] = channel3;
+  pulseWidths[3] = channel4;
+  pulseWidths[4] = channel5;
+  pulseWidths[5] = channel6;
+  pulseWidths[6] = channel7;
+  pulseWidths[7] = channel8;
+
   //reading out all the Tof Sensors
   for(int i = 1; i <=4; i++){
     selectChannel(active_tof);
@@ -154,7 +166,6 @@ void loop() {
   doMeasurementUltrasonic(frontRightSensor, "Front Right");
   doMeasurementUltrasonic(backLeftSensor, "Back Left");
   doMeasurementUltrasonic(backRightSensor, "Back Right");
-  // delay(1000); //no delay here, rn just for debuging purposes 
 
 
   //for future Cedi: Put all the maths here:
@@ -164,19 +175,12 @@ void loop() {
 
 
 
-  //coping the values of the channels into the array (for sending it out again, is more elegant this way plus abit easier)
-  channelValues[0] = channel1; 
-  channelValues[1] = channel2;
-  channelValues[2] = channel3;
-  channelValues[3] = channel4;
-  channelValues[4] = channel5;
-  channelValues[5] = channel6;
-  channelValues[6] = channel7;
-  channelValues[7] = channel8;
 
-  //sending out the ppm signals (last part of code again)
-  sendPPM();
+
   interrupts(); //activate the interupts again
+  //sending out the ppm signals 
+  sendPPM();
+
   //from here on can go every part of the code that is not crucialy depending on the ppm signal or the sensors themselfs, par example turning on a led or smt 
 
 
@@ -227,32 +231,27 @@ void readPPM() {
 
 //sending function for PPM signals 
 void sendPPM(){
-  uint32_t frameStartTime = micros();
-  uint32_t lastPulseEndTime = frameStartTime;
-  for (uint8_t i = 0; i < NUM_CHANNELS; i++) {
-    // Calculate the exact time to wait before the next pulse
-    uint32_t pulseStartTime = lastPulseEndTime + (channelValues[i] - PULSE_LENGTH);
-    // Wait for the time to send the next pulse
-    while (micros() < pulseStartTime) {
-    }
-    // Send the channel pulse
-    digitalWrite(PPM_OUT_PIN, LOW);
-    delayMicroseconds(PULSE_LENGTH);
-    digitalWrite(PPM_OUT_PIN, HIGH);
-    // Update the last pulse end time
-    lastPulseEndTime = pulseStartTime + PULSE_LENGTH;
+  // Generate PPM signal
+  uint32_t pulseStartTime = micros();
+
+  // Send the pulse widths for each channel
+  for (int i = 0; i < NUM_CHANNELS; i++) {
+    digitalWrite(PPM_PIN_OUT, LOW);
+    digitalWrite(PPM_PIN_OUT, HIGH);
+    delayMicroseconds(pulseWidths[i]);
   }
-  // Calculate remaining time for the sync pulse
-  uint32_t timeSpent = micros() - frameStartTime;
-  uint32_t syncPulseLength = PPM_PERIOD - timeSpent;
-  // Ensure sync pulse length is at least the pulse length
-  if (syncPulseLength > PULSE_LENGTH) {
-    delayMicroseconds(syncPulseLength - PULSE_LENGTH);
+
+  // Calculate the time taken and adjust to match FRAME_DURATION
+  uint32_t elapsedTime = micros() - pulseStartTime;
+  uint32_t remainingTime = FRAME_DURATION - elapsedTime;
+
+  if (remainingTime > 0) {
+    digitalWrite(PPM_PIN_OUT, LOW);
+    delayMicroseconds(remainingTime);
   }
-  // Send the sync pulse
-  digitalWrite(PPM_OUT_PIN, LOW);
-  delayMicroseconds(PULSE_LENGTH);
-  digitalWrite(PPM_OUT_PIN, HIGH);
+
+  // Update frame start time
+  frameStartTime = micros();
 }
 
 
@@ -279,7 +278,6 @@ void doMeasurementTOF(){ //Function to measure the distance with Tof
   } else {
     MeasurementTof = 400; //just always back to 400 to not interfear with anything ig
   }
-  // delay(20); //idk how much probs i can just leave that one out ig
 }
 
 //print the tof sensor values 
@@ -314,9 +312,13 @@ void doMeasurementUltrasonic(NewPing &sensor, const char *sensorName) {
 void ppmSetup(){
   //ppm setup
   pinMode(PPM_PIN, INPUT);
-  attachInterrupt(digitalPinToInterrupt(PPM_PIN), readPPM, FALLING);  // Set up an interrupt on the falling edge
-  pinMode(PPM_OUT_PIN, OUTPUT);
-  digitalWrite(PPM_OUT_PIN, HIGH);
+  attachInterrupt(digitalPinToInterrupt(PPM_PIN), readPPM, FALLING); // Set up an interrupt on the falling edge
+  pinMode(PPM_PIN_OUT, OUTPUT);
+  digitalWrite(PPM_PIN_OUT, LOW);
+
+
+  // Calculate the start time of the frame
+  frameStartTime = micros();
 }
 
 //setup for the VL53lox Sensors (aka Tof):

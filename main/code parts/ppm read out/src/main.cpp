@@ -5,7 +5,7 @@
 #define PPM_PIN 2 
 
 //Variables 
-volatile uint16_t channel1; //unit16_t = int with 2^16 different values 
+volatile uint16_t channel1; //unit16_t = int with 2^16 different values A
 volatile uint16_t channel2;
 volatile uint16_t channel3;
 volatile uint16_t channel4;

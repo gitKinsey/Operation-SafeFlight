@@ -147,9 +147,9 @@ void sendPPM() {
 
   // Send the sync pulse
   Serial.println("Sending sync pulse");
-  digitalWrite(PPM_OUT_PIN, LOW);
-  delayMicroseconds(PULSE_LENGTH);
   digitalWrite(PPM_OUT_PIN, HIGH);
+  delayMicroseconds(PULSE_LENGTH);
+  digitalWrite(PPM_OUT_PIN, LOW);
 }
 
 void readPPM() {
