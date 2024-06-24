@@ -18,7 +18,7 @@ volatile uint16_t channel8;
 volatile uint8_t currentChannel = 0; // Volatile: value can change at any time without action being taken, uint8_T: stores values between 0 and 255 (only integers)
 
 // PPM settings
-#define PPM_OUT_PIN 17  // Output pin for PPM signal (changed from 2 to 3 to avoid conflict with PPM_PIN)
+#define PPM_OUT_PIN 3  // Output pin for PPM signal (changed from 2 to 3 to avoid conflict with PPM_PIN)
 #define NUM_CHANNELS 8  // Number of PPM channels
 #define PPM_PERIOD 20000  // Total PPM frame length in microseconds (20ms)
 #define PULSE_LENGTH 300  // Length of sync pulse in microseconds
@@ -58,7 +58,6 @@ void loop() {
   uint16_t ch6 = channel6;
   uint16_t ch7 = channel7;
   uint16_t ch8 = channel8;
-  interrupts(); // Re-enable interrupts
 
   Serial.print("Channel 1: ");
   Serial.print(ch1);
@@ -103,10 +102,14 @@ void loop() {
   channelValues[5] = ch6;
   channelValues[6] = ch7;
   channelValues[7] = ch8;
+  interrupts(); // Re-enable interrupts
 
   sendPPM();
   delay(20);  // 50Hz refresh rate
+
+
 }
+
 
 void sendPPM() {
   uint32_t frameStartTime = micros();
@@ -128,9 +131,9 @@ void sendPPM() {
     Serial.print(channelValues[i]);
     Serial.println(" us");
 
-    digitalWrite(PPM_OUT_PIN, LOW);
-    delayMicroseconds(PULSE_LENGTH);
     digitalWrite(PPM_OUT_PIN, HIGH);
+    delayMicroseconds(PULSE_LENGTH);
+    digitalWrite(PPM_OUT_PIN, LOW);
 
     // Update the last pulse end time
     lastPulseEndTime = pulseStartTime + PULSE_LENGTH;
@@ -147,9 +150,9 @@ void sendPPM() {
 
   // Send the sync pulse
   Serial.println("Sending sync pulse");
-  digitalWrite(PPM_OUT_PIN, LOW);
-  delayMicroseconds(PULSE_LENGTH);
   digitalWrite(PPM_OUT_PIN, HIGH);
+  delayMicroseconds(PULSE_LENGTH);
+  digitalWrite(PPM_OUT_PIN, LOW);
 }
 
 void readPPM() {
