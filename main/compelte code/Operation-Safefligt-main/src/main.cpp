@@ -42,12 +42,15 @@
 //            - top stage is the all sensor colidions avoidn system 
 //  - connect hc-sro4 to 5v BUT INBETWEEN TRIG AND ECHO PUT A 1K OHM RESISTOR !!!!!!!!!!!!
 
+
+
 #include <Arduino.h>
 #include "Adafruit_VL53L0X.h"
 #include <Wire.h>
 #include <NewPing.h> 
 #include <math.h> 
-
+#include <MPU6050.h>
+#include <I2Cdev.h>
 
 //multiplexer stuff
 #define MULTIPLEXER_ADDRESS 0x70  // I2C address of the multiplexer 
@@ -112,6 +115,11 @@ NewPing backLeftSensor(TRIGGER_PIN_BACK_LEFT, ECHO_PIN_BACK_LEFT, MAX_DISTANCE);
 NewPing backRightSensor(TRIGGER_PIN_BACK_RIGHT, ECHO_PIN_BACK_RIGHT, MAX_DISTANCE);
 
 
+//MPU6050 stuff
+MPU6050 mpu; //setting up a mpu6050
+int16_t accel_x, accel_y, accel_z;
+int16_t gyro_x, gyro_y, gyro_z;
+int mpu_channel = 4;
 
 //defining all the funcitons
 void readPPM();
@@ -122,6 +130,7 @@ void doMeasurementUltrasonic(NewPing &sensor, const char *sensorName);
 void sendPPM();
 void ppmSetup();
 void tofSetup();
+void mpuSetup();
 
 
 void setup() {
@@ -134,6 +143,9 @@ void setup() {
 
   //tof Sensor initialization
   tofSetup();
+
+  //mpu Setup
+  mpuSetup();
 
 }
 
@@ -157,7 +169,9 @@ void loop() {
     selectChannel(active_tof);
     doMeasurementTOF();
     ReadOutsTof[active_tof] = MeasurementTof;
+    active_tof ++;
   }
+  active_tof = 0;
   printArray(ReadOutsTof, number_of_tof);
 
 
@@ -306,6 +320,38 @@ void doMeasurementUltrasonic(NewPing &sensor, const char *sensorName) {
   }
 }
 
+//MPU6050 stuff
+void doMeasurementMPU6050() {
+  // Select channel 5 on the multiplexer
+  Wire.beginTransmission(MULTIPLEXER_ADDRESS);
+  Wire.write(1 << mpu_channel); //we have 4 TOF on channel 0,1,2,3 and now the mpu6050 on channel 4
+  Wire.endTransmission();
+
+  // Initialize the MPU6050 sensor
+  Wire.begin();
+  mpu.initialize();
+
+  // Read the accelerometer and gyroscope data
+  mpu.getMotion6(&accel_x, &accel_y, &accel_z, &gyro_x, &gyro_y, &gyro_z);
+
+  // Calculate the angle using the accelerometer data
+  float angle_x = atan2(accel_y, accel_z) * 180 / M_PI;
+  float angle_y = atan2(accel_x, sqrt(accel_y * accel_y + accel_z * accel_z)) * 180 / M_PI;
+
+  // Print the accelerometer and gyroscope values
+  Serial.print("MPU6050 sensor values: ");
+  Serial.print("X: ");
+  Serial.print(accel_x);
+  Serial.print(", Y: ");
+  Serial.print(accel_y);
+  Serial.print(", Z: ");
+  Serial.print(accel_z);
+  Serial.print(" | Angle X: ");
+  Serial.print(angle_x);
+  Serial.print(", Angle Y: ");
+  Serial.println(angle_y);
+}
+
 
 //Setup functions:
 //setup for the ppm Input:
@@ -320,6 +366,7 @@ void ppmSetup(){
   // Calculate the start time of the frame
   frameStartTime = micros();
 }
+
 
 //setup for the VL53lox Sensors (aka Tof):
 void tofSetup(){
@@ -348,4 +395,19 @@ void tofSetup(){
     Serial.println(". Vl53L0X sensor up and running");
   } 
   Serial.println("All VL53L0X sensors initialized and running...");
+}
+
+
+//mpu6050 setup
+void mpuSetup(){
+  selectChannel(mpu_channel);
+  mpu.initialize();
+  
+  // Verify connection
+  if (mpu.testConnection()) {
+    Serial.println("MPU6050 connection successful");
+  } else {
+    Serial.println("MPU6050 connection failed");
+    while (1);  // Stop further execution if MPU6050 is not detected
+  }
 }
