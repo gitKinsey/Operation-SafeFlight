@@ -164,6 +164,7 @@ void loop() {
   pulseWidths[6] = channel7;
   pulseWidths[7] = channel8;
 
+  
   //reading out all the Tof Sensors
   for(int i = 1; i <=4; i++){
     selectChannel(active_tof);
