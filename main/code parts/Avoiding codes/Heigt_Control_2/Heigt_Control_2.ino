@@ -6,17 +6,17 @@
 #include "Adafruit_VL53L0X.h"
 
 // TOF sensor address
-#define SENSOR_ADDRESS 0x29       // I2C address of the VL53L0X sensor
+#define SENSOR_ADDRESS 0x29  // I2C address of the VL53L0X sensor
 
-float MeasurementTof = 4000;     // Default distance value in mm
+float MeasurementTof = 4000;  // Default distance value in mm
 Adafruit_VL53L0X lox;
 
 // PPM settings and variables
-#define PPM_PIN 2  // PPM input pin
-#define PPM_OUT_PIN 6  // PPM output pin
-#define NUM_CHANNELS 8  // Number of PPM channels
-#define PPM_PERIOD 20000  // Total PPM frame length in microseconds (20ms)
-#define PULSE_LENGTH 300  // Length of sync pulse in microseconds
+#define PPM_PIN 2               // PPM input pin
+#define PPM_OUT_PIN 6           // PPM output pin
+#define NUM_CHANNELS 8          // Number of PPM channels
+#define PPM_PERIOD 20000        // Total PPM frame length in microseconds (20ms)
+#define PULSE_LENGTH 300        // Length of sync pulse in microseconds
 #define MIN_CHANNEL_PULSE 1000  // Minimum channel pulse length in microseconds
 #define MAX_CHANNEL_PULSE 2000  // Maximum channel pulse length in microseconds
 
@@ -34,7 +34,7 @@ volatile uint8_t currentChannel = 0;
 uint16_t channelValues[NUM_CHANNELS];
 
 // PID control variables
-float targetAltitude = 1000.0; // Target altitude in mm
+float targetAltitude = 1000.0;  // Target altitude in mm
 float kp = 1.0, ki = 0.1, kd = 0.05;
 float previousError = 0, integral = 0;
 unsigned long lastTime = 0;
@@ -48,8 +48,8 @@ void updatePID(float currentAltitude);
 void setup() {
   Serial.begin(9600);  // Start serial communication for debugging
   Serial.println("Start of program");
-  
-  pinMode(PPM_PIN, INPUT_PULLUP); // Enable internal pull-up resistor
+
+  pinMode(PPM_PIN, INPUT_PULLUP);                                     // Enable internal pull-up resistor
   attachInterrupt(digitalPinToInterrupt(PPM_PIN), readPPM, FALLING);  // Set up an interrupt on PPM_PIN
 
   pinMode(PPM_OUT_PIN, OUTPUT);
@@ -57,18 +57,19 @@ void setup() {
 
 
   // TOF setup
-  Wire.begin(); // Start the I2C communication
+  Wire.begin();  // Start the I2C communication
   if (!lox.begin(SENSOR_ADDRESS)) {
     Serial.println("Failed to boot VL53L0X sensor");
-    while (1);  // Stop further execution if sensor initialization fails
+    while (1)
+      ;  // Stop further execution if sensor initialization fails
   }
 
-  lastTime = millis(); // Initialize lastTime for PID calculation
+  lastTime = millis();  // Initialize lastTime for PID calculation
 }
 
 void loop() {
   // Print PPM values
-  noInterrupts(); // Temporarily disable interrupts to safely read the volatile variables
+  noInterrupts();  // Temporarily disable interrupts to safely read the volatile variables
   uint16_t ch1 = channel1;
   uint16_t ch2 = channel2;
   uint16_t ch3 = channel3;
@@ -77,13 +78,22 @@ void loop() {
   uint16_t ch6 = channel6;
   uint16_t ch7 = channel7;
   uint16_t ch8 = channel8;
-  interrupts(); // Re-enable interrupts
+  interrupts();  // Re-enable interrupts
+  if (channel6 < 1600) {
+    // Update TOF measurement and PID control
+    doMeasurementTOF();
+    updatePID(MeasurementTof);
 
-  // Update TOF measurement and PID control
-  doMeasurementTOF();
-  updatePID(MeasurementTof);
-
-  // Update channel values for PPM output
+    // Update channel values for PPM output
+    channelValues[0] = ch1;
+    channelValues[1] = ch2;
+    channelValues[2] = ch3;
+    channelValues[3] = ch4;
+    channelValues[4] = ch5;
+    channelValues[5] = ch6;
+    channelValues[6] = ch7;
+    channelValues[7] = ch8;
+  }
   channelValues[0] = ch1;
   channelValues[1] = ch2;
   channelValues[2] = ch3;
@@ -92,9 +102,7 @@ void loop() {
   channelValues[5] = ch6;
   channelValues[6] = ch7;
   channelValues[7] = ch8;
-
   sendPPM();
-  delay(20);  // 50Hz refresh rate
 }
 
 void sendPPM() {
@@ -177,11 +185,11 @@ void readPPM() {
 void doMeasurementTOF() {
   VL53L0X_RangingMeasurementData_t measure;
   lox.rangingTest(&measure, false);
-  
+
   if (measure.RangeStatus != 4) {
     MeasurementTof = measure.RangeMilliMeter;
   } else {
-    MeasurementTof = 4000; // Default to 4000 mm if measurement is invalid
+    MeasurementTof = 4000;  // Default to 4000 mm if measurement is invalid
   }
 }
 
