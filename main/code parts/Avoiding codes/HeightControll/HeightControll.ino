@@ -1,3 +1,6 @@
+//all the tof measurments need to be in mm 
+
+
 #include <Arduino.h>
 #include <Wire.h>
 #include "Adafruit_VL53L0X.h"
@@ -8,9 +11,9 @@
 
 
 int TofBottomSensor = 0;
-float TofBottom = 400; //array index 3 (change via active_tof)
+float TofBottom = 4000; //array index 3 (change via active_tof)
 Adafruit_VL53L0X lox; //just a name for the VL53lox sensor
-float MeasurementTof = 400;
+float MeasurementTof = 4000;
 int active_tof = 0; //array start with index = 0
 
 // Define the pin connected to the PPM signal (every Pin on teensy 4.1 is interrupt compatible)
@@ -54,10 +57,10 @@ void setup() {
   pinMode(PPM_OUT_PIN, OUTPUT);
   digitalWrite(PPM_OUT_PIN, HIGH);
 
-  // Initialize channelValues with default values
-  for (int i = 0; i < NUM_CHANNELS; i++) {
-    channelValues[i] = 1500; // Default value for each channel
-  }
+  // // Initialize channelValues with default values
+  // for (int i = 0; i < NUM_CHANNELS; i++) {
+  //   channelValues[i] = 1500; // Default value for each channel
+  // }
 
 
   //tof setup
@@ -96,8 +99,8 @@ void loop() {
     selectChannel(TofBottomSensor);
     doMeasurementTOF();
 
-    while(MeasurementTof <= 200){
-      if(MeasurementTof <=75){
+    while(MeasurementTof <= 2000){
+      if(MeasurementTof <=750){
         channel4 += 100;
       }
       else{

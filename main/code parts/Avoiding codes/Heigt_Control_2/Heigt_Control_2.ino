@@ -93,7 +93,7 @@ void loop() {
     channelValues[5] = ch6;
     channelValues[6] = ch7;
     channelValues[7] = ch8;
-  }
+  }  
   channelValues[0] = ch1;
   channelValues[1] = ch2;
   channelValues[2] = ch3;
