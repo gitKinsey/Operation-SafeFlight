@@ -2,6 +2,7 @@
 
 // Define the pin connected to the PPM signal (every Pin on Teensy 4.1 is interrupt compatible)
 #define PPM_PIN 2 
+const int ledPin = 13;
 
 // Variables
 volatile uint16_t channel1;
@@ -18,7 +19,7 @@ volatile uint16_t channel8;
 #define TOTAL_PULSES (NUM_CHANNELS + 1)
 
 // Define the PPM output pin
-#define PPM_PIN_OUT 6
+#define PPM_PIN_OUT 3
 
 // Define the PPM frame duration in microseconds
 #define FRAME_DURATION 20000
@@ -38,6 +39,7 @@ volatile uint8_t currentChannel = 0;
 
 void setup() {
   // Set the PPM output pin as an output
+  Serial.begin(9600);
   pinMode(PPM_PIN_OUT, OUTPUT);
   digitalWrite(PPM_PIN_OUT, LOW);
 
@@ -49,10 +51,15 @@ void setup() {
 
   // Calculate the start time of the frame
   frameStartTime = micros();
+  pinMode(ledPin, OUTPUT);
+  digitalWrite(ledPin, HIGH);
+
+
 }
 
 void loop() {
   // Copy volatile variables to non-volatile array
+  Serial.print("HI");
   noInterrupts();
   pulseWidths[0] = channel1;
   pulseWidths[1] = channel2;

@@ -60,7 +60,7 @@
 //  Define the pin connected to the PPM signal (Input pin)
 #define PPM_PIN 2
 // PPM settings (for sending ppm signal again)
-#define PPM_PIN_OUT 6  // Output pin for PPM signal
+#define PPM_PIN_OUT 3  // Output pin for PPM signal
 #define NUM_CHANNELS 8 // Number of PPM channels
 #define TOTAL_PULSES (NUM_CHANNELS + 1)
 #define FRAME_DURATION 20000 // Total PPM frame length in microseconds
