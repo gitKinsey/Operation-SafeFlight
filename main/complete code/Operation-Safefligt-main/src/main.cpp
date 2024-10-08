@@ -717,19 +717,3 @@ void successTone() { //different frequenzies to make out the succestone better
   delay(50);
   playTone(2000, 200);
 }
-<<<<<<< Tabnine <<<<<<<
-/**//+
- * @brief Initializes a NewPing object for the front left sensor.//+
- *//+
- * This function sets up a NewPing object to measure distances using the HC-SR04 sensor.//+
- * The sensor is connected to the specified trigger and echo pins, and the maximum//+
- * distance it can measure is set to 400 cm.//+
- *//+
- * @param TRIGGER_PIN_FRONT_LEFT The pin number connected to the trigger pin of the HC-SR04 sensor.//+
- * @param ECHO_PIN_FRONT_LEFT The pin number connected to the echo pin of the HC-SR04 sensor.//+
- * @param MAX_DISTANCE The maximum distance the sensor can measure in centimeters.//+
- *//+
- * @return A NewPing object initialized for the front left sensor.//+
- *///+
-NewPing frontLeftSensor(TRIGGER_PIN_FRONT_LEFT, ECHO_PIN_FRONT_LEFT, MAX_DISTANCE);//+
->>>>>>> Tabnine >>>>>>>// {"conversationId":"2e99d033-6148-47ca-a751-bf3c214b9d32","source":"instruct"}
