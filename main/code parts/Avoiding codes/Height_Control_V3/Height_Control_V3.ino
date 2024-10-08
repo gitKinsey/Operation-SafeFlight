@@ -1,17 +1,12 @@
-//all the tof measurments need to be in mm
-//this code is the v3 version of the height controll, without using a multiplexer => if this works it needs to be adapted to the normal code with multiplexer shit
-//so yeah always before the measurment, switch the channel to the TofBottom sensor, should then be the array number 3 or smt (need to look at that in the main code)
-
 #include <Arduino.h>
 #include <Wire.h>
 #include "Adafruit_VL53L0X.h"
 
-//tof sensor setup
-Adafruit_VL53L0X lox;  //just a name for the VL53lox sensor
+// tof sensor setup
+Adafruit_VL53L0X lox;  // just a name for the VL53lox sensor
 float MeasurementTof = 4000;
 
-
-//ppm Setup
+// ppm Setup
 #define PPM_PIN 2
 
 // PPM settings
@@ -23,7 +18,7 @@ float MeasurementTof = 4000;
 #define MAX_CHANNEL_PULSE 2000         // Maximum channel pulse length in microseconds
 uint16_t channelValues[NUM_CHANNELS];  // Create an array that holds uint16_t with all the channel values
 
-//variables for ppm (here just the channel variables)
+// variables for ppm (here just the channel variables)
 volatile uint16_t channel1 = 1500;  // uint16_t = int with 2^16 different values, initialize to 1500us
 volatile uint16_t channel2 = 1500;
 volatile uint16_t channel3 = 1500;
@@ -34,15 +29,12 @@ volatile uint16_t channel7;
 volatile uint16_t channel8;
 volatile uint8_t currentChannel = 0;  // Volatile: value can change at any time without action being taken, uint8_T: stores values between 0 and 255 (only integers)
 
-//define the functions, needs to be done in order to use PlatformIo
+// define the functions, needs to be done in order to use PlatformIo
 void readPPM();
 void sendPPM();
-void doMeasurementTOF();
-int mapValuesToHeightControl();
-
+int mapValuesToHeightControl(int input);
 
 void setup() {
-  // put your setup code here, to run once:
   Serial.begin(9600);  // Start serial communication for debugging
   Serial.println("Start of program");
   pinMode(PPM_PIN, INPUT_PULLUP);                                     // Enable internal pull-up resistor
@@ -51,18 +43,19 @@ void setup() {
   pinMode(PPM_OUT_PIN, OUTPUT);
   digitalWrite(PPM_OUT_PIN, HIGH);
 
-
-
-  //tof Setup:
+  // tof Setup:
   Wire.begin();
 
   if (!lox.begin()) {
-    Serial.print("Failed to boot VL53L0X sensor ");
+    Serial.println("Failed to boot VL53L0X sensor");
+  } else {
+    // Set up the sensor for continuous measurement
+    lox.setMeasurementTimingBudgetMicroSeconds(18000);  // Set timing budget to 18ms
+    lox.startRangeContinuous();  // Start continuous measurements
   }
 }
 
 void loop() {
-  // put your main code here, to run repeatedly:
   noInterrupts();
   channelValues[0] = channel1;
   channelValues[1] = channel2;
@@ -75,16 +68,26 @@ void loop() {
   interrupts();
 
   if (channel6 < 1600) {
-    doMeasurementTOF();
-    int heightAdjustment = mapValuesToHeightControl(MeasurementTof);
-    noInterrupts();
-    channel4 += heightAdjustment;
-    channelValues[3] = channel4;
-    interrupts();
+    // Read the latest distance measurement in continuous mode
+    MeasurementTof = lox.readRange();
+
+    // Check if the measurement is valid
+    if (!lox.timeoutOccurred()) {
+      int heightAdjustment = mapValuesToHeightControl(MeasurementTof);
+      noInterrupts();
+      channel4 += heightAdjustment;
+      channelValues[3] = channel4;
+      interrupts();
+    } else {
+      // Handle timeout or invalid measurement
+      Serial.println("Measurement timeout occurred");
+    }
   }
-  //sending out the ppm signals again, with or without the adjustments to channel 4
+  
+  // Sending out the ppm signals again, with or without the adjustments to channel 4
   sendPPM();
 }
+
 void sendPPM() {
   uint32_t frameStartTime = micros();
   uint32_t lastPulseEndTime = frameStartTime;
@@ -171,27 +174,7 @@ void readPPM() {
   }
 }
 
-
-
-
-
-//tof stuff
-void doMeasurementTOF() {  //Function to measure the distance with Tof
-  VL53L0X_RangingMeasurementData_t measure;
-
-  // Start measurement
-  lox.rangingTest(&measure, false);
-
-  // Check if measurement is valid
-  if (measure.RangeStatus != 4) {
-    MeasurementTof = measure.RangeMilliMeter;
-  } else {
-    MeasurementTof = 400;  //just always back to 400 to not interfear with anything ig
-  }
-}
-
-
-//a function to map different incoming values from the tof sensor to the channel4 value, means closer distances = greater adjustment
+// A function to map different incoming values from the tof sensor to the channel4 value, means closer distances = greater adjustment
 int mapValuesToHeightControl(int input) {
   if (input <= 1000) {
     return map(input, 0, 999, 150, 0);

@@ -52,11 +52,11 @@
 #include <MPU6050.h>
 #include <I2Cdev.h>
 
-// multiplexer stuff
+// multiplexer setup variables
 #define MULTIPLEXER_ADDRESS 0x70 // I2C address of the multiplexer
 #define SENSOR_ADDRESS 0x29      // I2C address of the VL53L0X sensor
 
-// PPM stuff
+// PPM setup variables
 //  Define the pin connected to the PPM signal (Input pin)
 #define PPM_PIN 2
 // PPM settings (for sending ppm signal again)
@@ -82,7 +82,7 @@ uint16_t pulseWidths[NUM_CHANNELS];
 const uint16_t MIN_THROTTLE = 1000; // Minimum throttle value for safety
 const uint16_t MAX_THROTTLE = 2000; // Maximum throttle value for safety
 
-// Tof variables
+// Tof setup variables
 #define number_of_tof 4
 int current_tof_sensor = 1;
 int current_channel_for_initial = 0;
@@ -90,8 +90,8 @@ int active_tof = 0; // array start with index = 0
 char receivedChar;
 float MeasurementTof = 0;
 float TofFront = 400;                                                      // array index 0 (change via active_tof)
-float TofBack = 400;                                                       // array index 1 (change via active_tof)
-float TofTop = 400;                                                        // array index 2 (change via active_tof)
+float TofBack = 400;                                                                                                                                                                                                                                                                        // array index 1 (change via active_tof)
+float TofTop = 400;                                                                      // array index 2 (change via active_tof)
 float TofBottom = 400;                                                     // array index 3 (change via active_tof)
 float ReadOutsTof[number_of_tof] = {TofFront, TofBack, TofTop, TofBottom}; // Store all the Tof readouts, from https://www.w3schools.com/cpp/cpp_arrays.asp
 
@@ -100,8 +100,9 @@ float TofTopValue = ReadOutsTof[3];
 float TofBottomValue = ReadOutsTof[2];
 
 Adafruit_VL53L0X lox; // just a name for the VL53lox sensor
+Adafruit_VL53L0X sensors[number_of_tof]; //is needed for continuous measurement
 
-// hc-sro4 Setup stuff
+// hc-sro4 Setup setup variables
 #define TRIGGER_PIN_FRONT_LEFT 10
 #define ECHO_PIN_FRONT_LEFT 11
 #define TRIGGER_PIN_FRONT_RIGHT 12
@@ -124,7 +125,7 @@ float ultrasonicDistanceFrontRight = 0;
 float ultrasonicDistanceBackLeft = 0;
 float ultrasonicDistanceBackRight = 0;
 
-// MPU6050 stuff
+// MPU6050 setup variables
 MPU6050 mpu;                       // setting up a mpu6050
 int16_t accel_x, accel_y, accel_z; // variables for the acceleration of the drone
 int16_t gyro_x, gyro_y, gyro_z;    // varibales for the oriantaion of the drone
@@ -138,6 +139,8 @@ int distanceThreshold_z = 150;  // distance threshold for the z plane
 const int thresholdArraySize = 4;
 int tofBrokenThreshold[thresholdArraySize]; // array to hold if the 4 sensors are under the threshold
 
+//warn beeper setup variables
+#define beeper_pin 8
 // defining all the funcitons
 void readPPM();
 void selectChannel(uint8_t channel);
@@ -151,6 +154,11 @@ void mpuSetup();
 void doMeasurementMPU6050();
 void landDrone();
 void thresholdDetectionToF();
+//beeper specific functions
+void playTone(int frequency, int duration);
+void alertTone();
+void errrorTone();
+void successTone();
 
 void setup()
 {
@@ -158,14 +166,17 @@ void setup()
   Serial.println("Start of program");
 
   // setting up all the neccesarry parts of the code:
-  // ppm Input setup
+  // ppm input setup
   ppmSetup();
 
-  // tof Sensor initialization
+  // tof sensor initialization
   tofSetup();
 
-  // mpu Setup
+  // mpu setup
   mpuSetup();
+
+  //beeper setup
+  pinMode(beeper_pin, OUTPUT);
 }
 
 void loop()
@@ -432,20 +443,25 @@ void selectChannel(uint8_t channel)
 // tof stuff
 void doMeasurementTOF()
 { // Function to measure the distance with Tof
-  VL53L0X_RangingMeasurementData_t measure;
+
+  //single measurement:
+  // VL53L0X_RangingMeasurementData_t measure;
 
   // Start measurement
-  lox.rangingTest(&measure, false);
-
+  //lox.rangingTest(&measure, false);
   // Check if measurement is valid
-  if (measure.RangeStatus != 4)
-  {
-    MeasurementTof = measure.RangeMilliMeter;
-  }
-  else
-  {
-    MeasurementTof = 400; // just always back to 400 to not interfear with anything ig
-  }
+//   if (measure.RangeStatus != 4)
+//   {
+//     MeasurementTof = measure.RangeMilliMeter;
+//   }
+//   else
+//   {
+//     MeasurementTof = 4000; // just always back to 400 to not interfear with anything ig
+//   }
+
+//continous measurement:
+  MeasurementTof = sensors[active_tof].readRange();
+
 }
 
 // print the tof sensor values
@@ -609,30 +625,45 @@ void tofSetup()
   if (Wire.endTransmission() == 0)
   {
     Serial.println("Multiplexer detected.");
+    successTone();
   }
   else
   {
     Serial.println("Multiplexer not detected. Check connections and address.");
+    errorTone();
     while (1)
       ; // Stop further execution if multiplexer is not detected
   }
   // if not working just delete the for loop :), nevermind works (or should be working when last tested on esp32 (need to be tested on teensy 4.1), works aswell)
-  for (current_tof_sensor = 1; current_tof_sensor <= number_of_tof; current_tof_sensor++)
-  { // for loop for checking every connected sensor
-    //(just checks for the number of sensor enterd above)
+  for (int current_tof_sensor = 0; current_tof_sensor < number_of_tof; current_tof_sensor++) {
+    // Select the current channel on the multiplexer
     selectChannel(current_channel_for_initial);
-    if (!lox.begin(SENSOR_ADDRESS))
-    {
-      Serial.print("Failed to boot VL53L0X sensor ");
-      Serial.println(current_tof_sensor);
-      while (1)
-        ;
+    
+    // Initialize the sensor at the selected channel
+    if (!sensors[current_tof_sensor].begin(SENSOR_ADDRESS)) {
+        Serial.print("Failed to boot VL53L0X sensor ");
+        Serial.println(current_tof_sensor + 1); // Adjusted to be 1-based for better readability
+        for (int i = 0; i < current_tof_sensor +1; i++)
+        alertTone();
+        while (1); // Halt execution
     }
+    
+    // Set up the sensor for continuous measurement
+    sensors[current_tof_sensor].setMeasurementTimingBudgetMicroSeconds(15000); // Set timing budget to 15ms
+    sensors[current_tof_sensor].startRangeContinuous(); // Start continuous measurements
+    
+    // Move to the next channel for the next sensor
     current_channel_for_initial++;
-    Serial.print(current_tof_sensor);
-    Serial.println(". Vl53L0X sensor up and running");
-  }
-  Serial.println("All VL53L0X sensors initialized and running...");
+    
+    // Print the sensor status
+    Serial.print(current_tof_sensor + 1); // Adjusted to be 1-based for better readability
+    Serial.println(". VL53L0X sensor up and running");
+  
+}
+
+// Print completion message
+Serial.println("All VL53L0X sensors initialized and running...");
+successTone();
 }
 
 // mpu6050 setup
@@ -649,7 +680,56 @@ void mpuSetup()
   else
   {
     Serial.println("MPU6050 connection failed");
+    errorTone();
+    errorTone();
     while (1)
       ; // Stop further execution if MPU6050 is not detected
   }
 }
+
+
+//beeper functions 
+
+void playTone(int frequency, int duration){
+  tone(beeper_pin, frequency, duration);
+  delay(duration * 1.30); // to account for the extra time it takes to play the tone
+  noTone(beeper_pin);
+}
+
+void alertTone(){
+  playTone(3000, 200); 
+  delay(100);
+  playTone(3000, 200);
+}
+
+void errorTone(){
+  playTone(500, 200);
+  delay(100);
+  playTone(500, 200);
+  delay(100);
+  playTone(500, 200);
+}
+
+void successTone() { //different frequenzies to make out the succestone better
+  playTone(1000, 100);
+  delay(50);
+  playTone(1500, 100);
+  delay(50);
+  playTone(2000, 200);
+}
+<<<<<<< Tabnine <<<<<<<
+/**//+
+ * @brief Initializes a NewPing object for the front left sensor.//+
+ *//+
+ * This function sets up a NewPing object to measure distances using the HC-SR04 sensor.//+
+ * The sensor is connected to the specified trigger and echo pins, and the maximum//+
+ * distance it can measure is set to 400 cm.//+
+ *//+
+ * @param TRIGGER_PIN_FRONT_LEFT The pin number connected to the trigger pin of the HC-SR04 sensor.//+
+ * @param ECHO_PIN_FRONT_LEFT The pin number connected to the echo pin of the HC-SR04 sensor.//+
+ * @param MAX_DISTANCE The maximum distance the sensor can measure in centimeters.//+
+ *//+
+ * @return A NewPing object initialized for the front left sensor.//+
+ *///+
+NewPing frontLeftSensor(TRIGGER_PIN_FRONT_LEFT, ECHO_PIN_FRONT_LEFT, MAX_DISTANCE);//+
+>>>>>>> Tabnine >>>>>>>// {"conversationId":"2e99d033-6148-47ca-a751-bf3c214b9d32","source":"instruct"}
