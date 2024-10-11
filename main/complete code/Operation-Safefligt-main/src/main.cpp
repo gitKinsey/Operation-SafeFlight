@@ -42,7 +42,7 @@
 // evtl for the avoidn part some links:
 //   https://www.programiz.com/cpp-programming/multidimensional-arrays
 
-// Cedi wennd nömme witerchonsch met c++ lueg mol uf die website do: https://www.w3schools.com/cpp/cpp_arrays.asp
+// witere Infos öber c++ lueg mol uf die website do: https://www.w3schools.com/cpp/cpp_arrays.asp
 
 #include <Arduino.h>
 #include "Adafruit_VL53L0X.h"
@@ -90,8 +90,8 @@ int active_tof = 0; // array start with index = 0
 char receivedChar;
 float MeasurementTof = 0;
 float TofFront = 400;                                                      // array index 0 (change via active_tof)
-float TofBack = 400;                                                                                                                                                                                                                                                                        // array index 1 (change via active_tof)
-float TofTop = 400;                                                                      // array index 2 (change via active_tof)
+float TofBack = 400;                                                       // array index 1 (change via active_tof)
+float TofTop = 400;                                                        // array index 2 (change via active_tof)
 float TofBottom = 400;                                                     // array index 3 (change via active_tof)
 float ReadOutsTof[number_of_tof] = {TofFront, TofBack, TofTop, TofBottom}; // Store all the Tof readouts, from https://www.w3schools.com/cpp/cpp_arrays.asp
 
@@ -157,7 +157,7 @@ void thresholdDetectionToF();
 //beeper specific functions
 void playTone(int frequency, int duration);
 void alertTone();
-void errrorTone();
+void errorTone();
 void successTone();
 
 void setup()
@@ -332,8 +332,23 @@ void loop()
     }
     // manipulating the signal for the ppm
     channel1 = channel1 - (adjustValue * right) + (adjustValue * left);
+    if(channel1 < 1000){
+      channel1 = 1000;
+    }else if(channel1 > 2000){
+      channel1 = 2000;
+    }
     channel2 = channel2 - (adjustValue * forward) + (adjustValue * backward);
+    if(channel2 < 1000){
+      channel2 = 1000;
+    }else if(channel2 > 2000){
+      channel2 = 2000;
+    }
     channel4 = channel4 - (adjustValue * down) + (adjustValue * up);
+    if(channel4 < 1000){
+      channel4 = 1000;
+    }else if(channel4 > 2000){
+      channel4 = 2000;
+    }
 
     // coping the values of the channels into the array (for sending it out again, is more elegant this way plus abit easier)
     pulseWidths[0] = channel1;
@@ -354,7 +369,6 @@ void loop()
   // theoretically here can go the code, which is not connected to the avoiding system or ppm system, for example if i wanna play music or smt with the drone (probably there won't be anything here)
 }
 
-// defining all the functions here (needs to be done like this in PlatformIO):
 
 // ppm functions (doesn't need to be called, gets called asoon as an interupt happends)
 void readPPM()
