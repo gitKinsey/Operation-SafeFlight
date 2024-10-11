@@ -1,9 +1,11 @@
 //import all the necessary libraries
 #include <Arduino.h>
 
+
 //ppm Pins setup
 #define PPM_PIN 2                     // PPM input pin 
 #define PPM_PIN_OUT 3                 // PPM output pin
+
 
 // Variables for the ppm channels
 volatile uint16_t channel1;
@@ -15,6 +17,7 @@ volatile uint16_t channel6;
 volatile uint16_t channel7;
 volatile uint16_t channel8;
 
+
 //ppm signal setup settings
 #define NUM_CHANNELS 8                  // number of channels
 #define TOTAL_PULSES (NUM_CHANNELS + 1) // number of pulses
@@ -25,16 +28,17 @@ uint16_t pulseWidths[NUM_CHANNELS];     // Array to store the pulse widths for e
 uint32_t frameStartTime;                // Variables to track the start time of the frame
 volatile uint8_t currentChannel = 0;    // Variable to keep track of the current channel being read
 
+
 //variables for the sensor data
 float tofFront = 400;
 float tofBack = 400;
 float tofTop = 400;
 float tofBottom = 400;
 
-float ultrasonicDistanceFrontLeft = 0;
-float ultrasonicDistanceFrontRight = 0;
-float ultrasonicDistanceBackLeft = 0;
-float ultrasonicDistanceBackRight = 0;
+float ultrasonicDistanceFrontLeft = 400;
+float ultrasonicDistanceFrontRight = 400;
+float ultrasonicDistanceBackLeft = 400;
+float ultrasonicDistanceBackRight = 400;
 
 // variables for avoiding part
 int distanceThreshold_xy = 100;         // distance threshold for the xy plane
@@ -46,12 +50,17 @@ const uint16_t MAX_THROTTLE = 2000;     // Maximum throttle value for safety
 //other variables
 const int ledPin = 13;                  // setup built in led
 
+
 //define all the functions here:
 void uartSetup();
 void ppmSetup();
 void readPPM();
 void sendPPM();
 void sensorReadout();
+bool validateChecksum(uint8_t* buffer, int bufferSize);
+
+
+
 void setup() {
   //Start a serial connection with the computer for debuging
   Serial.begin(9600);
@@ -61,6 +70,8 @@ void setup() {
   uartSetup();
   ppmSetup();
 }
+
+
 
 void loop() {
   // first the teensy should request all the sensor data from the esp32
@@ -85,7 +96,10 @@ void loop() {
   pulseWidths[7] = channel8;
   interrupts();
   sendPPM();
-  }else if(channel6 < 1700 && channel6 < 1300){     // this is mode 2 => only hight controlling sensor are read out
+
+
+
+  }else if (channel6 >= 1300 && channel6 < 1700){     // this is mode 2 => only hight controlling sensor are read out
   // check if one of the sensors value is to close to the wall or an other obstacle:
     if (tofTop <= distanceThreshold_z)
     {
@@ -114,6 +128,9 @@ void loop() {
 
     //sending the ppm signal out
     sendPPM();
+
+
+
   }else{
     // this is mode 3 => all sensors are read out
     // for future Cedi: Put all the maths here (for full on collision avoidance):
@@ -131,12 +148,14 @@ void loop() {
     //first hight control (same as in mode 2)
     if (tofTop <= distanceThreshold_z)
     {
+      channel4 = constrain(channel4, MIN_THROTTLE + 50, MAX_THROTTLE);  //if throttle is already at 1000 (threshold )
       channel4 -= 50;                 // throttle down
       
     }
     else if (tofBottom <= distanceThreshold_z)
 
     {
+      channel4 = constrain(channel4, MIN_THROTTLE, MAX_THROTTLE - 50);  //if throttle is already at 2000 (threshold)
       channel4 += 50;                 // Throttle up
 
     }
@@ -245,6 +264,9 @@ void sendPPM(){
 
 
 }
+
+
+
 void readPPM() {
   static uint32_t lastTime = 0;  // Variable to store the time of the previous pulse
   uint32_t currentTime = micros();  // Get the current time in microseconds
@@ -287,6 +309,8 @@ void readPPM() {
   }
 }
 
+
+
 void ppmSetup(){
   // Set the PPM output pin as an output
   pinMode(PPM_PIN_OUT, OUTPUT);
@@ -304,25 +328,74 @@ void ppmSetup(){
   digitalWrite(ledPin, HIGH);  
 }
 
+
+
 void uartSetup(){
   // Serial1 for ESP32 communication (using RX1 and TX1 pins)
   Serial1.begin(115200); // Adjust baud rate to match the ESP32
 }
 
-void sensorReadout(){
-  if (Serial1.available() >= sizeof(float) * 8) { //wait till 8 float values are available
-    // Read all 8 float values from the Serial1 interface
-    Serial1.readBytes((uint8_t*)&tofFront, sizeof(tofFront));                                            // Read tofFront
-    Serial1.readBytes((uint8_t*)&tofBack, sizeof(tofBack));                                              // Read tofBack
-    Serial1.readBytes((uint8_t*)&tofTop, sizeof(tofTop));                                                // Read tofTop
-    Serial1.readBytes((uint8_t*)&tofBottom, sizeof(tofBottom));                                          // Read tofBottom
 
-    Serial1.readBytes((uint8_t*)&ultrasonicDistanceFrontLeft, sizeof(ultrasonicDistanceFrontLeft));      // Read Front Left
-    Serial1.readBytes((uint8_t*)&ultrasonicDistanceFrontRight, sizeof(ultrasonicDistanceFrontRight));    // Read Front Right
-    Serial1.readBytes((uint8_t*)&ultrasonicDistanceBackLeft, sizeof(ultrasonicDistanceBackLeft));        // Read Back Left
-    Serial1.readBytes((uint8_t*)&ultrasonicDistanceBackRight, sizeof(ultrasonicDistanceBackRight));      // Read Back Right
-  }
+
+void sensorReadout(){
+    static uint8_t buffer[sizeof(float) * 8 + 3]; // Data packet size (sensor data + start + checksum + end)
+    static uint8_t index = 0;                    
+    uint8_t receivedByte;                         //variable to save the incoming packet
+
+
+    while (Serial1.available()) {       //check if serial is availabe
+        receivedByte = Serial1.read();  //read the data packet
+
+
+        //receiving the data packet
+        // Check for start delimiter (at the beginning of each packet a x0AA is placed to mark the beginning of a new packet, at the end a x0FF is placed to mark the end)
+        if (receivedByte == 0xAA && index == 0) {   //check if the 0xAA is there or not, aka see if a new packet started, index == 0 means that currently no packet is beeing processed
+            index++;  // Start recording data (startes bc it moves past the delimiter (starting 0xAA part))
+        }
+        else if (index > 0) { //if the byte isn^t the delimiter here the received data is stored into the buffer, at the index place
+            buffer[index++] = receivedByte;
+            
+            // If buffer is full (i.e., packet received), happends bc the buffer size is beeing declared at the beginning
+            if (index == sizeof(buffer)) {
+                // Validate the end delimiter and checksum
+                if (buffer[sizeof(buffer) - 1] == 0xFF && validateChecksum(buffer, sizeof(buffer))) {
+                    // Extract sensor values if the packet is valid, this part isn't from me: https://www.tutorialspoint.com/c_standard_library/c_function_memcpy.htm, and with the assistent of the Tabnine AI
+                    memcpy(&tofFront, &buffer[1], sizeof(float));   //first is the destination variable, then from where to pull the data (the source is here the buffer (at the specified index)), then the amount of bytes copied (here 4 bc float uses 4, thats why sizeof(float))
+                    memcpy(&tofBack, &buffer[1 + sizeof(float)], sizeof(float));
+                    memcpy(&tofTop, &buffer[1 + 2 * sizeof(float)], sizeof(float));
+                    memcpy(&tofBottom, &buffer[1 + 3 * sizeof(float)], sizeof(float));
+                    memcpy(&ultrasonicDistanceFrontLeft, &buffer[1 + 4 * sizeof(float)], sizeof(float));
+                    memcpy(&ultrasonicDistanceFrontRight, &buffer[1 + 5 * sizeof(float)], sizeof(float));
+                    memcpy(&ultrasonicDistanceBackLeft, &buffer[1 + 6 * sizeof(float)], sizeof(float));
+                    memcpy(&ultrasonicDistanceBackRight, &buffer[1 + 7 * sizeof(float)], sizeof(float));
+
+                    //from here it's again my code
+
+                    // Reset the buffer index for the next packet
+                    index = 0;
+                } else {
+                    // Invalid packet, discard it
+                    index = 0;
+                }
+            }
+        }
+    }
 }
+
+
+// Function to validate the checksum, not coded by myself: Source Tabnine AI
+bool validateChecksum(uint8_t* buffer, int bufferSize) {
+    uint8_t checksum = 0x00;
+    
+    // XOR over all data bytes, starting at buffer[1], excluding start, checksum, and end
+    for (int i = 1; i < bufferSize - 2; i++) { 
+        checksum ^= buffer[i];
+    }
+    
+    // Compare the calculated checksum with the received checksum (second-to-last byte)
+    return (checksum == buffer[bufferSize - 2]);
+}
+
 
 //sources (other sources are mentioned in the code)
 //uart: https://www.circuitbasics.com/how-to-set-up-uart-communication-for-arduino/
@@ -330,6 +403,10 @@ void sensorReadout(){
 //      https://forum.arduino.cc/t/communication-between-two-arduino-uno-via-tx-and-rx/1150462/5
 //      https://www.pjrc.com/teensy/td_uart.html
 //      https://mischianti.org/esp32-s3-devkitc-1-high-resolution-pinout-and-specs/
+//c++:  https://cplusplus.com/doc/tutorial/
+//      https://www.tutorialspoint.com/c_standard_library/c_function_memcpy.htm 
+//      https://www.tutorialspoint.com/c_standard_library/time_h.htm 
+
 
 // Licence
 //  MIT License

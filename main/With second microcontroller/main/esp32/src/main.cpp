@@ -6,9 +6,11 @@
 #include <MPU6050.h>
 #include <I2Cdev.h>
 
+
 // Multiplexer setup
 #define MULTIPLEXER_ADDRESS 0x70 // I2C address of the multiplexer
 #define SENSOR_ADDRESS 0x29      // I2C address of the VL53L0X sensor
+
 
 // Variables for the sensor data
 volatile float TofFront = 400;
@@ -21,6 +23,7 @@ volatile float ultrasonicDistanceFrontRight = 0;
 volatile float ultrasonicDistanceBackLeft = 0;
 volatile float ultrasonicDistanceBackRight = 0;
 
+
 // ToF setup 
 #define number_of_tof 4
 int current_channel_for_initial = 0;
@@ -28,6 +31,7 @@ int active_tof = 0; // array start with index = 0
 float MeasurementTof = 0;
 float ReadOutsTof[number_of_tof]; // Store all the ToF readouts
 Adafruit_VL53L0X sensors[number_of_tof]; // Array for continuous measurement
+
 
 // HC-SR04 setup variables
 #define TRIGGER_PIN_FRONT_LEFT 10
@@ -40,11 +44,13 @@ Adafruit_VL53L0X sensors[number_of_tof]; // Array for continuous measurement
 #define ECHO_PIN_BACK_RIGHT 19
 #define MAX_DISTANCE 200 // Maximum distance to ping
 
-// Sensor instances
+
+// create the NewPing instances
 NewPing frontLeftSensor(TRIGGER_PIN_FRONT_LEFT, ECHO_PIN_FRONT_LEFT, MAX_DISTANCE);
 NewPing frontRightSensor(TRIGGER_PIN_FRONT_RIGHT, ECHO_PIN_FRONT_RIGHT, MAX_DISTANCE);
 NewPing backLeftSensor(TRIGGER_PIN_BACK_LEFT, ECHO_PIN_BACK_LEFT, MAX_DISTANCE);
 NewPing backRightSensor(TRIGGER_PIN_BACK_RIGHT, ECHO_PIN_BACK_RIGHT, MAX_DISTANCE);
+
 
 // Task handles
 TaskHandle_t SensorTaskHandle = NULL;
@@ -67,6 +73,8 @@ void playTone(int frequency, int duration);
 void alertTone();
 void errorTone();
 void successTone();
+
+
 
 // Function to read sensor values to run on core 0
 void readSensors(void *parameter) {
@@ -120,26 +128,54 @@ void readSensors(void *parameter) {
     }
 }
 
+
+
 // Function to send data over UART to run on core 1
 void sendData(void *parameter) {
     Serial2.begin(115200, SERIAL_8N1, 16, 17);  // TX on GPIO 17, RX on GPIO 16
+    uint8_t checksum;
 
     // Continuous sending loop
     while (true) {
+
+        Serial2.write(0xAA);        //send a start signal for the packet, indicates that a new packet is beeing send
+
         // Send sensor values over UART
-        Serial2.write((uint8_t*)&TofFront, sizeof(TofFront));
+        Serial2.write((uint8_t*)&TofFront, sizeof(TofFront)); //first the variable type then what to send and atlast how many bytes
         Serial2.write((uint8_t*)&TofBack, sizeof(TofBack));
         Serial2.write((uint8_t*)&TofTop, sizeof(TofTop));
         Serial2.write((uint8_t*)&TofBottom, sizeof(TofBottom));
-        Serial2.write((uint8_t*)&ultrasonicDistanceBackLeft, sizeof(ultrasonicDistanceBackLeft));
-        Serial2.write((uint8_t*)&ultrasonicDistanceBackRight, sizeof(ultrasonicDistanceBackRight));
         Serial2.write((uint8_t*)&ultrasonicDistanceFrontLeft, sizeof(ultrasonicDistanceFrontLeft));
         Serial2.write((uint8_t*)&ultrasonicDistanceFrontRight, sizeof(ultrasonicDistanceFrontRight));
+        Serial2.write((uint8_t*)&ultrasonicDistanceBackLeft, sizeof(ultrasonicDistanceBackLeft));
+        Serial2.write((uint8_t*)&ultrasonicDistanceBackRight, sizeof(ultrasonicDistanceBackRight));
+
+         // Calculate checksum by XORing all the sensor data bytes, not writen by myself in the checksum part i had help from Tabnine AI
+        checksum = 0x00;
+        checksum ^= *((uint8_t*)&TofFront);
+        checksum ^= *((uint8_t*)&TofBack);
+        checksum ^= *((uint8_t*)&TofTop);
+        checksum ^= *((uint8_t*)&TofBottom);
+        checksum ^= *((uint8_t*)&ultrasonicDistanceBackLeft);
+        checksum ^= *((uint8_t*)&ultrasonicDistanceBackRight);
+        checksum ^= *((uint8_t*)&ultrasonicDistanceFrontLeft);
+        checksum ^= *((uint8_t*)&ultrasonicDistanceFrontRight);
+
+
+        // Send the checksum
+        Serial2.write(checksum);
+
+        // End delimiter
+        Serial2.write(0xFF);    // same as start just to mark the end of the packet  
+        
 
         // Delay to control the interval between UART transmissions.
         vTaskDelay(35 / portTICK_PERIOD_MS);
     }
 }
+
+
+
 
 void setup() {
     Serial.begin(9600);  // Start USB serial communication for debugging
@@ -166,9 +202,16 @@ void setup() {
     );
 }
 
+
+
+
+
 void loop() {
     // Do nothing here; tasks are running in the background
 }
+
+
+
 
 // Function to select a channel on the multiplexer
 void selectChannel(uint8_t channel) {
@@ -176,6 +219,7 @@ void selectChannel(uint8_t channel) {
     Wire.write(1 << channel);
     Wire.endTransmission();
 }
+
 
 // Function to perform ToF measurement
 void doMeasurementTOF(int sensorIndex) {
@@ -191,6 +235,7 @@ void doMeasurementTOF(int sensorIndex) {
         MeasurementTof = 400; // Out of range default value
     }
 }
+
 
 // Function to perform ultrasonic measurement
 void doMeasurementUltrasonic(NewPing &sensor, const char *sensorName) {
@@ -219,8 +264,8 @@ void doMeasurementUltrasonic(NewPing &sensor, const char *sensorName) {
 }
 
 
-//beeper functions 
 
+//beeper functions 
 void playTone(int frequency, int duration){
   tone(beeper_pin, frequency, duration);
   delay(duration * 1.30); // to account for the extra time it takes to play the tone
@@ -256,6 +301,10 @@ void successTone() { //different frequenzies to make out the succestone better
 //      https://forum.arduino.cc/t/communication-between-two-arduino-uno-via-tx-and-rx/1150462/5
 //      https://www.pjrc.com/teensy/td_uart.html
 //      https://mischianti.org/esp32-s3-devkitc-1-high-resolution-pinout-and-specs/
+//c++:  https://cplusplus.com/doc/tutorial/
+//      https://www.tutorialspoint.com/c_standard_library/c_function_memcpy.htm 
+//      https://www.tutorialspoint.com/c_standard_library/time_h.htm 
+
 
 // Licence
 //  MIT License
