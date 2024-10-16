@@ -63,27 +63,40 @@ void setup() {
 
 void loop() {
   // put your main code here, to run repeatedly:
-  noInterrupts();
-  channelValues[0] = channel1;
-  channelValues[1] = channel2;
-  channelValues[2] = channel3;
-  channelValues[3] = channel4;
-  channelValues[4] = channel5;
-  channelValues[5] = channel6;
-  channelValues[6] = channel7;
-  channelValues[7] = channel8;
-  interrupts();
-
   if (channel6 < 1600) {
     doMeasurementTOF();
     int heightAdjustment = mapValuesToHeightControl(MeasurementTof);
     noInterrupts();
-    channel4 += heightAdjustment;
-    channelValues[3] = channel4;
+    channelValues[0] = channel1;
+    channelValues[1] = channel2;
+    channelValues[2] = channel3;
+    channelValues[3] = channel4 + heightAdjustment;
+    channelValues[4] = channel5;
+    channelValues[5] = channel6;
+    channelValues[6] = channel7;
+    channelValues[7] = channel8;
     interrupts();
+
+    sendPPM();
+    delay(20);
   }
-  //sending out the ppm signals again, with or without the adjustments to channel 4
-  sendPPM();
+
+  else {
+    //do the normal signal part
+    noInterrupts();
+    channelValues[0] = channel1;
+    channelValues[1] = channel2;
+    channelValues[2] = channel3;
+    channelValues[3] = channel4;
+    channelValues[4] = channel5;
+    channelValues[5] = channel6;
+    channelValues[6] = channel7;
+    channelValues[7] = channel8;
+    interrupts();
+
+    //sending out the ppm signals again, with or without the adjustments to channel 4
+    sendPPM();
+  }
 }
 void sendPPM() {
   uint32_t frameStartTime = micros();

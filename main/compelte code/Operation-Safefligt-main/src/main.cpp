@@ -43,7 +43,7 @@
 //   https://www.programiz.com/cpp-programming/multidimensional-arrays
 
 // Cedi wennd nömme witerchonsch met c++ lueg mol uf die website do: https://www.w3schools.com/cpp/cpp_arrays.asp
-
+//the manipulating isnt't working smt is off with that 
 #include <Arduino.h>
 #include "Adafruit_VL53L0X.h"
 #include <Wire.h>
@@ -69,14 +69,14 @@
 uint32_t frameStartTime;
 
 // Separate variables for each channel (of the array, for the ppm signals)
-volatile uint16_t channel1; // unit16_t is an interger that is able to hold 2^16 numbers, so max ig smt with 65k
+volatile uint16_t channel1; // uint16_t is an interger that is able to hold 2^16 numbers, so max ig smt with 65k
 volatile uint16_t channel2; // volatile is a variable that can change without action beeing taken aka, not getten activly changed in code (par example: an interput that occurs changes it (which is the case here))
 volatile uint16_t channel3;
 volatile uint16_t channel4;
 volatile uint16_t channel5;
 volatile uint16_t channel6;
 volatile uint16_t channel7;
-volatile uint16_t channel8; // same as unit16_t just 2^8 this time haha (works also with unit32_t)
+volatile uint16_t channel8; // same as uint16_t just 2^8 this time haha (works also with uint32_t)
 volatile uint8_t currentChannel = 0;
 uint16_t pulseWidths[NUM_CHANNELS];
 const uint16_t MIN_THROTTLE = 1000; // Minimum throttle value for safety
@@ -653,3 +653,6 @@ void mpuSetup()
       ; // Stop further execution if MPU6050 is not detected
   }
 }
+
+
+
