@@ -1,0 +1,1 @@
+Trig Pins können normal verbunden werden, jedoch müssen die Echos direkt an den Microcontroller angeschlossen werden, da der Levelshifter nicht funktioniert
