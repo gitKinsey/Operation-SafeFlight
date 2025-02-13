@@ -13,7 +13,7 @@
 volatile uint16_t channel1 = 1500;
 volatile uint16_t channel2 = 1500;
 volatile uint16_t channel3 = 1500;
-volatile uint16_t channel4 = 1500;
+volatile uint16_t channel4 = 1000;
 volatile uint16_t channel5 = 1500;
 volatile uint16_t channel6 = 1500;
 volatile uint16_t channel7 = 1500;
