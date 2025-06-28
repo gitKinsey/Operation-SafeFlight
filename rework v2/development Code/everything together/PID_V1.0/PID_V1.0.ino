@@ -3,6 +3,7 @@
 #include <NewPing.h>  // Include the NewPing library
 #include <Wire.h>
 #include "Adafruit_VL53L0X.h"
+#include <PID_v1.h>  // Include the PID library
 
 // Replace with your multiplexer address (default for TCA9548A is 0x70)
 #define MULTIPLEXER_ADDRESS 0x70
@@ -88,6 +89,23 @@ float tofReadOuts[4] = {tofFront, tofBack, tofTop, tofBottom};
 
 int adjustValue = 100;
 
+// PID variables for front/back/left/right (200 cm target distance)
+double inputFront, inputBack, inputLeft, inputRight;
+double outputFront, outputBack, outputLeft, outputRight;
+double setpointFront = 200.0, setpointBack = 200.0, setpointLeft = 200.0, setpointRight = 200.0;
+
+// PID controller for front/back/left/right
+PID pidFront(&inputFront, &outputFront, &setpointFront, 2.0, 5.0, 1.0, DIRECT);
+PID pidBack(&inputBack, &outputBack, &setpointBack, 2.0, 5.0, 1.0, DIRECT);
+PID pidLeft(&inputLeft, &outputLeft, &setpointLeft, 2.0, 5.0, 1.0, DIRECT);
+PID pidRight(&inputRight, &outputRight, &setpointRight, 2.0, 5.0, 1.0, DIRECT);
+
+// PID variables for top/bottom (100 cm target distance)
+double inputTop, inputBottom;
+double outputTop, outputBottom;
+double setpointTop = 100.0, setpointBottom = 100.0;
+
+
 // Function prototypes
 void hc_sr04_task(void *pvParameters);
 void ppm_task(void *pvParameters);
@@ -121,129 +139,99 @@ void readPPM() {
   }
 }
 
-// PPM reading and signal generation task (runs on Core 0)
+// Updated ppm_task with PID control
 void ppm_task(void *pvParameters) {
-  while (true) {
-    if (channel6 >= 1700) {  // this is mode 1 => no sensor read outs
-  // copying the volatile variables into the array (don't modify the channel variables, just add the necessary value in the noInterrupt part)
-  noInterrupts();  // making sure that the data from the ppm input doesn't change during read out (really important) => everything crucial that shouldn't be disrupted by interrupts goes here aka, reading sensor values, performing the calculations, sending the ppm signal out again
-  pulseWidths[0] = channel1;
-  pulseWidths[1] = channel2;
-  pulseWidths[2] = channel3;
-  pulseWidths[3] = channel4;
-  pulseWidths[4] = channel5;
-  pulseWidths[5] = channel6;
-  pulseWidths[6] = channel7;
-  pulseWidths[7] = channel8;
-  interrupts();
-  sendPPM();
-  
-} else if (channel6 >= 1300 && channel6 < 1700) {  // this is mode 2 => only height-controlling sensors are read out
-  // check if one of the sensors' value is too close to the wall or another obstacle:
-  if (tofTop <= distanceThreshold_z) {
-    channel4 -= adjustValue;  // throttle down
-  } else if (tofBottom <= distanceThreshold_z) {
-    channel4 += adjustValue;  // Throttle up
-  }
-  channel4 = constrain(channel4, MIN_THROTTLE, MAX_THROTTLE);  // makes sure that the channel value stays between min and max throttle if something went wrong before
+    while (true) {
+        if (channel6 >= 1700) {  // mode 1 => no sensor read outs
+            // Copying the volatile variables into the array
+            noInterrupts();
+            pulseWidths[0] = channel1;
+            pulseWidths[1] = channel2;
+            pulseWidths[2] = channel3;
+            pulseWidths[3] = channel4;
+            pulseWidths[4] = channel5;
+            pulseWidths[5] = channel6;
+            pulseWidths[6] = channel7;
+            pulseWidths[7] = channel8;
+            interrupts();
+            sendPPM();
+        } else if (channel6 >= 1300 && channel6 < 1700) {  // mode 2 => only height-controlling sensors
+            // Check height sensors (top and bottom)
+            inputTop = tofTop;
+            inputBottom = tofBottom;
 
-  noInterrupts();  // making sure that the data from the ppm input doesn't change during read out
-  pulseWidths[0] = channel1;
-  pulseWidths[1] = channel2;
-  pulseWidths[2] = channel3;
-  pulseWidths[3] = channel4;
-  pulseWidths[4] = channel5;
-  pulseWidths[5] = channel6;
-  pulseWidths[6] = channel7;
-  pulseWidths[7] = channel8;
-  interrupts();
+            // Compute PID outputs for top and bottom
+            pidTop.Compute();
+            pidBottom.Compute();
 
-  // sending the ppm signal out
-  sendPPM();
-  
-} else {  // this is mode 3 => all sensors are read out
-  // for future Cedi: Put all the maths here (for full-on collision avoidance):
-  // check if any sensors are under the threshold and then adjust the logic, e.g., just have 6 direction variables which get plus 1 if the threshold is undercut
-  
-  // create variables to save the necessary adjustments
-  int forward = 0;
-  int backward = 0;
-  int left = 0;
-  int right = 0;
-  int up = 0;
-  int down = 0;
+            // Adjust the throttle based on PID outputs
+            channel4 -= outputTop;  // Throttle down for top sensor
+            channel4 += outputBottom;  // Throttle up for bottom sensor
+            channel4 = constrain(channel4, MIN_THROTTLE, MAX_THROTTLE);
 
-  // first height control (same as in mode 2)
-  if (tofTop <= distanceThreshold_z) {
-    channel4 = constrain(channel4, MIN_THROTTLE + adjustValue, MAX_THROTTLE);  // if throttle is already at 1000 (threshold)
-    channel4 -= adjustValue;  // throttle down
-  } else if (tofBottom <= distanceThreshold_z) {
-    channel4 = constrain(channel4, MIN_THROTTLE, MAX_THROTTLE - adjustValue);  // if throttle is already at 2000 (threshold)
-    channel4 += adjustValue;  // Throttle up
-  }
+            // Copy pulse widths
+            noInterrupts();
+            pulseWidths[0] = channel1;
+            pulseWidths[1] = channel2;
+            pulseWidths[2] = channel3;
+            pulseWidths[3] = channel4;
+            pulseWidths[4] = channel5;
+            pulseWidths[5] = channel6;
+            pulseWidths[6] = channel7;
+            pulseWidths[7] = channel8;
+            interrupts();
 
-  // forward-backward control for the ultrasonic sensors
-  if (distance_ultrasonic_front_left < distanceThreshold_xy) {
-    backward++;
-    right++;
-  } else if (distance_ultrasonic_front_right < distanceThreshold_xy) {
-    backward++;
-    left++;
-  } else if (distance_ultrasonic_rear_left < distanceThreshold_xy) {
-    forward++;
-    right++;
-  } else if (distance_ultrasonic_rear_right < distanceThreshold_xy) {
-    forward++;
-    left++;
-  }
+            sendPPM();
+        } else {  // mode 3 => all sensors read out
+            // Height control (top and bottom)
+            inputTop = tofTop;
+            inputBottom = tofBottom;
+            pidTop.Compute();
+            pidBottom.Compute();
+            
+            channel4 -= outputTop;  
+            channel4 += outputBottom;  
+            channel4 = constrain(channel4, MIN_THROTTLE, MAX_THROTTLE);
 
-  // for the remaining tof sensors
-  if (tofFront < distanceThreshold_xy) {
-    backward++;
-  } else if (tofBack < distanceThreshold_xy) {
-    forward++;
-  }
+            // Front/back/left/right control
+            inputFront = tofFront;
+            inputBack = tofBack;
+            inputLeft = tofLeft;
+            inputRight = tofRight;
 
-  // manipulating the signal for the ppm
-  channel1 = channel1 - (adjustValue * right) + (adjustValue * left);
-  if (channel1 < 1000) {
-    channel1 = 1000;
-  } else if (channel1 > 2000) {
-    channel1 = 2000;
-  }
-  channel2 = channel2 - (adjustValue * forward) + (adjustValue * backward);
-  if (channel2 < 1000) {
-    channel2 = 1000;
-  } else if (channel2 > 2000) {
-    channel2 = 2000;
-  }
-  channel4 = channel4 - (adjustValue * down) + (adjustValue * up);
-  if (channel4 < 1000) {
-    channel4 = 1000;
-  } else if (channel4 > 2000) {
-    channel4 = 2000;
-  }
+            // Compute PID outputs for all directions
+            pidFront.Compute();
+            pidBack.Compute();
+            pidLeft.Compute();
+            pidRight.Compute();
 
-  // constraining all the values before putting them into the array values for sending out
-  channel1 = constrain(channel1, MIN_PULSE_WIDTH, MAX_PULSE_WIDTH);
-  channel2 = constrain(channel2, MIN_PULSE_WIDTH, MAX_PULSE_WIDTH);
-  channel4 = constrain(channel4, MIN_THROTTLE, MAX_THROTTLE);
+            // Adjust channel values based on PID outputs
+            channel1 = channel1 - outputRight + outputLeft;
+            channel2 = channel2 - outputForward + outputBackward;
+            channel4 = channel4 - outputDown + outputUp;
 
-  // saving the channel values into the array values for sending out
-  noInterrupts();  // making sure that the data from the ppm input doesn't change during read out
-  pulseWidths[0] = channel1;
-  pulseWidths[1] = channel2;
-  pulseWidths[2] = channel3;
-  pulseWidths[3] = channel4;
-  pulseWidths[4] = channel5;
-  pulseWidths[5] = channel6;
-  pulseWidths[6] = channel7;
-  pulseWidths[7] = channel8;
-  interrupts();
-  sendPPM();
-}
-    vTaskDelay(10 / portTICK_PERIOD_MS); // Prevent overloading Core 0
-  }
+            // Constrain the output values
+            channel1 = constrain(channel1, MIN_PULSE_WIDTH, MAX_PULSE_WIDTH);
+            channel2 = constrain(channel2, MIN_PULSE_WIDTH, MAX_PULSE_WIDTH);
+            channel4 = constrain(channel4, MIN_THROTTLE, MAX_THROTTLE);
+
+            // Copy pulse widths
+            noInterrupts();
+            pulseWidths[0] = channel1;
+            pulseWidths[1] = channel2;
+            pulseWidths[2] = channel3;
+            pulseWidths[3] = channel4;
+            pulseWidths[4] = channel5;
+            pulseWidths[5] = channel6;
+            pulseWidths[6] = channel7;
+            pulseWidths[7] = channel8;
+            interrupts();
+
+            sendPPM();
+        }
+
+        vTaskDelay(10 / portTICK_PERIOD_MS);  // Prevent overloading Core 0
+    }
 }
 
 // HC-SR04 distance measuring task (runs on Core 1)

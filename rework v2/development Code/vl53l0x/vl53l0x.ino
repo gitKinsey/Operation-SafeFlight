@@ -28,6 +28,33 @@ void setup() {
   }
 
   Serial.println("VL53L0X sensor initialized.");
+
+   selectMultiplexerChannel(1);
+
+  // Initialize VL53L0X sensor
+  if (!lox.begin(SENSOR_ADDRESS)) {
+    Serial.println("Failed to initialize VL53L0X!");
+  }
+
+  Serial.println("VL53L0X sensor initialized.");
+
+   selectMultiplexerChannel(2);
+
+  // Initialize VL53L0X sensor
+  if (!lox.begin(SENSOR_ADDRESS)) {
+    Serial.println("Failed to initialize VL53L0X!");
+  }
+
+  Serial.println("VL53L0X sensor initialized.");
+
+   selectMultiplexerChannel(3);
+
+  // Initialize VL53L0X sensor
+  if (!lox.begin(SENSOR_ADDRESS)) {
+    Serial.println("Failed to initialize VL53L0X!");
+  }
+
+  Serial.println("VL53L0X sensor initialized.");
 }
 
 void loop() {
@@ -39,7 +66,27 @@ void loop() {
     // Take measurement with the VL53L0X sensor
     takeMeasurement();
 
-    delay(500);  // Wait for 500ms before switching to the next channel
+    selectMultiplexerChannel(1);
+    Serial.print("Reading from channel: ");
+    Serial.println(2);
+
+    // Take measurement with the VL53L0X sensor
+    takeMeasurement();
+  selectMultiplexerChannel(2);
+    Serial.print("Reading from channel: ");
+    Serial.println(3);
+
+    // Take measurement with the VL53L0X sensor
+    takeMeasurement();
+selectMultiplexerChannel(3);
+    Serial.print("Reading from channel: ");
+    Serial.println(4);
+
+    // Take measurement with the VL53L0X sensor
+    takeMeasurement();
+
+
+    delay(5000);  // Wait for 500ms before switching to the next channel
   
 }
 

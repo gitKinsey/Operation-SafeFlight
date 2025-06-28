@@ -3,6 +3,46 @@
 #include <NewPing.h>  // Include the NewPing library
 #include <Wire.h>
 #include "Adafruit_VL53L0X.h"
+#include <PID_v1.h>
+
+// --- PID CONFIG ---
+constexpr double BASE_Kp_z = 2.0, BASE_Ki_z = 5.0, BASE_Kd_z = 1.0;
+constexpr double BASE_Kp_x = 1.5, BASE_Ki_x = 4.0, BASE_Kd_x = 0.8;
+constexpr double BASE_Kp_y = 1.5, BASE_Ki_y = 4.0, BASE_Kd_y = 0.8;
+
+// --- Tuning Constants ---
+constexpr int FORCE_SCALE = 100;
+constexpr double SETPOINT_ADJUST_STEP = 3.0;
+constexpr double LOWPASS_ALPHA = 0.2;
+constexpr int SAFE_DISTANCE = 100;
+constexpr int CRITICAL_DISTANCE = 50;
+constexpr int DEADZONE = 10;
+constexpr uint16_t MIN_THROTTLE = 1000;
+constexpr uint16_t MAX_THROTTLE = 2000;
+
+// --- PID-Instanzen ---
+double z_input = 0, z_output = 0, z_setpoint = 150;
+double x_input = 0, x_output = 0, x_setpoint = 0;
+double y_input = 0, y_output = 0, y_setpoint = 0;
+
+PID z_pid(&z_input, &z_output, &z_setpoint, BASE_Kp_z, BASE_Ki_z, BASE_Kd_z, DIRECT);
+PID x_pid(&x_input, &x_output, &x_setpoint, BASE_Kp_x, BASE_Ki_x, BASE_Kd_x, DIRECT);
+PID y_pid(&y_input, &y_output, &y_setpoint, BASE_Kp_y, BASE_Ki_y, BASE_Kd_y, DIRECT);
+
+// --- Zustandsvariablen ---
+unsigned long obstacleTimers[4] = {0, 0, 0, 0};
+unsigned long stuckSince = 0;
+bool rescueMode = false;
+bool sensor_noise = false;
+
+int last_front = 0, last_back = 0;
+int last_escape_direction_x = 0, last_escape_direction_y = 0;
+unsigned long last_clear_path_time = 0;
+
+float filtered_front = 0;
+float filtered_back = 0;
+float filtered_diag_left = 0;
+float filtered_diag_right = 0;
 
 // Replace with your multiplexer address (default for TCA9548A is 0x70)
 #define MULTIPLEXER_ADDRESS 0x70
@@ -33,8 +73,7 @@ unsigned int distance_ultrasonic_rear_right;
 // variables for avoiding part
 int distanceThreshold_xy = 100;         // distance threshold for the xy plane
 int distanceThreshold_z = 150;          // distance threshold for the z plane
-const uint16_t MIN_THROTTLE = 1000;     // Minimum throttle value for safety
-const uint16_t MAX_THROTTLE = 2000;     // Maximum throttle value for safet
+
 
 // Define the pin connected to the PPM signal
 #define PPM_PIN 13
@@ -121,128 +160,132 @@ void readPPM() {
   }
 }
 
-// PPM reading and signal generation task (runs on Core 0)
 void ppm_task(void *pvParameters) {
+  z_pid.SetOutputLimits(-300, 300);
+  x_pid.SetOutputLimits(-100, 100);
+  y_pid.SetOutputLimits(-100, 100);
+
+  z_pid.SetMode(AUTOMATIC);
+  x_pid.SetMode(AUTOMATIC);
+  y_pid.SetMode(AUTOMATIC);
+
   while (true) {
-    if (channel6 >= 1700) {  // this is mode 1 => no sensor read outs
-  // copying the volatile variables into the array (don't modify the channel variables, just add the necessary value in the noInterrupt part)
-  noInterrupts();  // making sure that the data from the ppm input doesn't change during read out (really important) => everything crucial that shouldn't be disrupted by interrupts goes here aka, reading sensor values, performing the calculations, sending the ppm signal out again
-  pulseWidths[0] = channel1;
-  pulseWidths[1] = channel2;
-  pulseWidths[2] = channel3;
-  pulseWidths[3] = channel4;
-  pulseWidths[4] = channel5;
-  pulseWidths[5] = channel6;
-  pulseWidths[6] = channel7;
-  pulseWidths[7] = channel8;
-  interrupts();
-  sendPPM();
-  
-} else if (channel6 >= 1300 && channel6 < 1700) {  // this is mode 2 => only height-controlling sensors are read out
-  // check if one of the sensors' value is too close to the wall or another obstacle:
-  if (tofTop <= distanceThreshold_z) {
-    channel4 -= adjustValue;  // throttle down
-  } else if (tofBottom <= distanceThreshold_z) {
-    channel4 += adjustValue;  // Throttle up
-  }
-  channel4 = constrain(channel4, MIN_THROTTLE, MAX_THROTTLE);  // makes sure that the channel value stays between min and max throttle if something went wrong before
+    int mode = channel6;
 
-  noInterrupts();  // making sure that the data from the ppm input doesn't change during read out
-  pulseWidths[0] = channel1;
-  pulseWidths[1] = channel2;
-  pulseWidths[2] = channel3;
-  pulseWidths[3] = channel4;
-  pulseWidths[4] = channel5;
-  pulseWidths[5] = channel6;
-  pulseWidths[6] = channel7;
-  pulseWidths[7] = channel8;
-  interrupts();
+    if (mode >= 1700) {
+      updateAndSendPPM();
 
-  // sending the ppm signal out
-  sendPPM();
-  
-} else {  // this is mode 3 => all sensors are read out
-  // for future Cedi: Put all the maths here (for full-on collision avoidance):
-  // check if any sensors are under the threshold and then adjust the logic, e.g., just have 6 direction variables which get plus 1 if the threshold is undercut
-  
-  // create variables to save the necessary adjustments
-  int forward = 0;
-  int backward = 0;
-  int left = 0;
-  int right = 0;
-  int up = 0;
-  int down = 0;
+    } else if (mode >= 1300 && mode < 1700) {
+      z_input = (tofTop + (2000 - tofBottom)) / 2.0;
+      z_pid.Compute();
+      channel4 = constrain(channel4 + (int)z_output, MIN_THROTTLE, MAX_THROTTLE);
+      updateAndSendPPM();
 
-  // first height control (same as in mode 2)
-  if (tofTop <= distanceThreshold_z) {
-    channel4 = constrain(channel4, MIN_THROTTLE + adjustValue, MAX_THROTTLE);  // if throttle is already at 1000 (threshold)
-    channel4 -= adjustValue;  // throttle down
-  } else if (tofBottom <= distanceThreshold_z) {
-    channel4 = constrain(channel4, MIN_THROTTLE, MAX_THROTTLE - adjustValue);  // if throttle is already at 2000 (threshold)
-    channel4 += adjustValue;  // Throttle up
-  }
+    } else {
+      // Sensorwerte einlesen & filtern
+      int raw_front = min(distance_ultrasonic_front_left, distance_ultrasonic_front_right);
+      int raw_back = min(distance_ultrasonic_rear_left, distance_ultrasonic_rear_right);
+      int raw_diag_left = min(distance_ultrasonic_front_left, distance_ultrasonic_rear_left);
+      int raw_diag_right = min(distance_ultrasonic_front_right, distance_ultrasonic_rear_right);
 
-  // forward-backward control for the ultrasonic sensors
-  if (distance_ultrasonic_front_left < distanceThreshold_xy) {
-    backward++;
-    right++;
-  } else if (distance_ultrasonic_front_right < distanceThreshold_xy) {
-    backward++;
-    left++;
-  } else if (distance_ultrasonic_rear_left < distanceThreshold_xy) {
-    forward++;
-    right++;
-  } else if (distance_ultrasonic_rear_right < distanceThreshold_xy) {
-    forward++;
-    left++;
-  }
+      filtered_front = (1.0 - LOWPASS_ALPHA) * filtered_front + LOWPASS_ALPHA * raw_front;
+      filtered_back = (1.0 - LOWPASS_ALPHA) * filtered_back + LOWPASS_ALPHA * raw_back;
+      filtered_diag_left = (1.0 - LOWPASS_ALPHA) * filtered_diag_left + LOWPASS_ALPHA * raw_diag_left;
+      filtered_diag_right = (1.0 - LOWPASS_ALPHA) * filtered_diag_right + LOWPASS_ALPHA * raw_diag_right;
 
-  // for the remaining tof sensors
-  if (tofFront < distanceThreshold_xy) {
-    backward++;
-  } else if (tofBack < distanceThreshold_xy) {
-    forward++;
-  }
+      int front = (int)filtered_front;
+      int back = (int)filtered_back;
+      int diag_left = (int)filtered_diag_left;
+      int diag_right = (int)filtered_diag_right;
 
-  // manipulating the signal for the ppm
-  channel1 = channel1 - (adjustValue * right) + (adjustValue * left);
-  if (channel1 < 1000) {
-    channel1 = 1000;
-  } else if (channel1 > 2000) {
-    channel1 = 2000;
-  }
-  channel2 = channel2 - (adjustValue * forward) + (adjustValue * backward);
-  if (channel2 < 1000) {
-    channel2 = 1000;
-  } else if (channel2 > 2000) {
-    channel2 = 2000;
-  }
-  channel4 = channel4 - (adjustValue * down) + (adjustValue * up);
-  if (channel4 < 1000) {
-    channel4 = 1000;
-  } else if (channel4 > 2000) {
-    channel4 = 2000;
-  }
+      if (abs(front - back) < DEADZONE) front = back = (front + back) / 2;
+      if (abs(diag_left - diag_right) < DEADZONE) diag_left = diag_right = (diag_left + diag_right) / 2;
 
-  // constraining all the values before putting them into the array values for sending out
-  channel1 = constrain(channel1, MIN_PULSE_WIDTH, MAX_PULSE_WIDTH);
-  channel2 = constrain(channel2, MIN_PULSE_WIDTH, MAX_PULSE_WIDTH);
-  channel4 = constrain(channel4, MIN_THROTTLE, MAX_THROTTLE);
+      sensor_noise = (abs(front - last_front) > 30 || abs(back - last_back) > 30);
+      last_front = front;
+      last_back = back;
 
-  // saving the channel values into the array values for sending out
-  noInterrupts();  // making sure that the data from the ppm input doesn't change during read out
-  pulseWidths[0] = channel1;
-  pulseWidths[1] = channel2;
-  pulseWidths[2] = channel3;
-  pulseWidths[3] = channel4;
-  pulseWidths[4] = channel5;
-  pulseWidths[5] = channel6;
-  pulseWidths[6] = channel7;
-  pulseWidths[7] = channel8;
-  interrupts();
-  sendPPM();
-}
-    vTaskDelay(10 / portTICK_PERIOD_MS); // Prevent overloading Core 0
+      bool critical = false;
+      int directions[4] = {front, back, diag_left, diag_right};
+      for (int i = 0; i < 4; i++) {
+        if (directions[i] < CRITICAL_DISTANCE) {
+          if (millis() - obstacleTimers[i] > 300) critical = true;
+        } else {
+          obstacleTimers[i] = millis();
+        }
+      }
+
+      if (front < 50 && back < 50 && diag_left < 50 && diag_right < 50) {
+        if (stuckSince == 0) stuckSince = millis();
+        if (millis() - stuckSince > 1000) rescueMode = true;
+      } else {
+        stuckSince = 0;
+        rescueMode = false;
+      }
+
+      if (critical || rescueMode) {
+        channel1 = 1500;
+        channel2 = 1900;
+        channel3 = 1500;
+        channel4 = constrain(channel4 + 100, MIN_THROTTLE, MAX_THROTTLE);
+
+      } else {
+        float front_w = constrain(map(front, 30, 150, 1.0, 0.0), 0.0, 1.0);
+        float back_w = constrain(map(back, 30, 150, 1.0, 0.0), 0.0, 1.0);
+        float left_w = constrain(map(diag_left, 30, 150, 1.0, 0.0), 0.0, 1.0);
+        float right_w = constrain(map(diag_right, 30, 150, 1.0, 0.0), 0.0, 1.0);
+
+        double x_force = back_w - front_w;
+        double y_force = left_w - right_w;
+
+        if (x_force != 0 || y_force != 0) {
+          last_escape_direction_x = x_force * 100;
+          last_escape_direction_y = y_force * 100;
+          last_clear_path_time = millis();
+        }
+
+        if (millis() - last_clear_path_time > 300 && x_force == 0 && y_force == 0) {
+          x_force = last_escape_direction_x / 100.0;
+          y_force = last_escape_direction_y / 100.0;
+        }
+
+        bool near = front < SAFE_DISTANCE || back < SAFE_DISTANCE || diag_left < SAFE_DISTANCE || diag_right < SAFE_DISTANCE;
+        if (near) {
+          x_pid.SetTunings(BASE_Kp_x * 1.5, BASE_Ki_x * 1.2, BASE_Kd_x);
+          y_pid.SetTunings(BASE_Kp_y * 1.5, BASE_Ki_y * 1.2, BASE_Kd_y);
+        } else {
+          x_pid.SetTunings(BASE_Kp_x, BASE_Ki_x, BASE_Kd_x);
+          y_pid.SetTunings(BASE_Kp_y, BASE_Ki_y, BASE_Kd_y);
+        }
+
+        x_input = x_force * FORCE_SCALE;
+        y_input = y_force * FORCE_SCALE;
+
+        if (!sensor_noise) {
+          x_pid.Compute();
+          y_pid.Compute();
+          double scale = near ? 0.6 : 1.0;
+          channel1 += (int)(x_output * scale);
+          channel2 += (int)(y_output * scale);
+        }
+
+        if (diag_left < 50 || diag_right < 50) {
+          channel3 = 1500;
+        }
+      }
+
+      if (tofTop < 50) z_setpoint = max(z_setpoint - SETPOINT_ADJUST_STEP, 100.00);
+      if (tofBottom < 50) z_setpoint = min(z_setpoint + SETPOINT_ADJUST_STEP, 300.00);
+
+      z_input = (tofTop + (2000 - tofBottom)) / 2.0;
+      z_pid.Compute();
+      channel4 = constrain(channel4 + (int)z_output, MIN_THROTTLE, MAX_THROTTLE);
+
+      channel1 = constrain(channel1, 1000, 2000);
+      channel2 = constrain(channel2, 1000, 2000);
+
+      updateAndSendPPM();
+    }
   }
 }
 
@@ -407,6 +450,17 @@ void sendPPM(){
       digitalWrite(PPM_PIN_OUT, LOW);
       delayMicroseconds(remainingTime);
     }
-
-
+}
+void updateAndSendPPM() {
+  noInterrupts();
+  pulseWidths[0] = channel1;
+  pulseWidths[1] = channel2;
+  pulseWidths[2] = channel3;
+  pulseWidths[3] = channel4;
+  pulseWidths[4] = channel5;
+  pulseWidths[5] = channel6;
+  pulseWidths[6] = channel7;
+  pulseWidths[7] = channel8;
+  interrupts();
+  sendPPM();
 }

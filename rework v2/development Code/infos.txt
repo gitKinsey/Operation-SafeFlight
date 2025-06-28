@@ -1,1 +1,9 @@
 Trig Pins können normal verbunden werden, jedoch müssen die Echos direkt an den Microcontroller angeschlossen werden, da der Levelshifter nicht funktioniert
+
+
+vl53lox
+
+Front = 0
+back = 1
+top = 2
+bottom = 3
