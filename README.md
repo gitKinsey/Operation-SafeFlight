@@ -16,7 +16,7 @@ If you don't no how to fly a drone, please do not start it. If something goes wr
 
 
 #Writen documation and explenation of the project
-[View Matura Arbeit](<Matura Arbeit_2 .pdf>)
+[View Matura Arbeit](<Matura Arbeit_2.pdf>)
 
 # Credits to:
 1. mjs513 (on GitHub): Modified the newPing library to work on teensy 4.x  (I'm mentioning him here anyway even though its fine for him if i don't)
